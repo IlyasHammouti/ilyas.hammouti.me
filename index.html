@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ilyas Hammouti — Géographe</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy: #0D1B3E;
+      --gold: #B8943F;
+      --gold-light: #D4AF6A;
+      --cream: #F7F3ED;
+      --white: #ffffff;
+      --gray: #6B7280;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--cream);
+      color: var(--navy);
+      overflow-x: hidden;
+    }
+
+    /* NAV */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 1.2rem 4rem;
+      background: rgba(247, 243, 237, 0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(184, 148, 63, 0.2);
+    }
+
+    .nav-logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--navy);
+      letter-spacing: 0.02em;
+    }
+
+    .nav-logo span { color: var(--gold); }
+
+    .nav-links { display: flex; gap: 2.5rem; list-style: none; }
+    .nav-links a {
+      text-decoration: none;
+      color: var(--navy);
+      font-size: 0.85rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--gold); }
+
+    /* HERO */
+    .hero {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: center;
+      padding: 8rem 4rem 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      right: -10%;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 55%;
+      height: 90%;
+      background: var(--navy);
+      border-radius: 2px;
+      z-index: 0;
+    }
+
+    .hero-text { position: relative; z-index: 1; }
+
+    .hero-eyebrow {
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      font-weight: 500;
+      margin-bottom: 1.5rem;
+      display: flex; align-items: center; gap: 1rem;
+    }
+
+    .hero-eyebrow::before {
+      content: '';
+      display: block;
+      width: 40px;
+      height: 1px;
+      background: var(--gold);
+    }
+
+    h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(3rem, 6vw, 5.5rem);
+      font-weight: 900;
+      line-height: 1.05;
+      margin-bottom: 1.5rem;
+    }
+
+    h1 .first { color: var(--gold); }
+    h1 .last { color: var(--navy); }
+
+    .hero-desc {
+      font-size: 1rem;
+      line-height: 1.8;
+      color: var(--gray);
+      max-width: 480px;
+      margin-bottom: 2.5rem;
+    }
+
+    .hero-cta {
+      display: inline-flex; align-items: center; gap: 0.75rem;
+      background: var(--navy);
+      color: var(--white);
+      padding: 0.9rem 2rem;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    .hero-cta:hover { background: var(--gold); transform: translateX(4px); }
+
+    .hero-right {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2rem;
+      padding-left: 4rem;
+    }
+
+    .hero-stat {
+      text-align: right;
+      color: var(--white);
+    }
+
+    .hero-stat .num {
+      font-family: 'Playfair Display', serif;
+      font-size: 3.5rem;
+      font-weight: 700;
+      color: var(--gold-light);
+      line-height: 1;
+    }
+
+    .hero-stat .label {
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      opacity: 0.7;
+      margin-top: 0.3rem;
+    }
+
+    .hero-divider {
+      width: 1px;
+      height: 60px;
+      background: rgba(255,255,255,0.2);
+    }
+
+    /* SECTION BASE */
+    section { padding: 6rem 4rem; }
+
+    .section-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--gold);
+      font-weight: 500;
+      margin-bottom: 0.75rem;
+      display: flex; align-items: center; gap: 1rem;
+    }
+
+    .section-label::before {
+      content: '';
+      display: block;
+      width: 30px;
+      height: 1px;
+      background: var(--gold);
+    }
+
+    .section-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 700;
+      line-height: 1.15;
+      margin-bottom: 3rem;
+      max-width: 600px;
+    }
+
+    /* ABOUT */
+    .about {
+      background: var(--navy);
+      color: var(--white);
+    }
+
+    .about .section-title { color: var(--white); }
+
+    .about-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 5rem;
+      align-items: start;
+    }
+
+    .about-text p {
+      font-size: 1.05rem;
+      line-height: 1.85;
+      color: rgba(255,255,255,0.75);
+      margin-bottom: 1.5rem;
+    }
+
+    .about-highlight {
+      color: var(--gold-light);
+      font-weight: 500;
+    }
+
+    .about-tags {
+      display: flex; flex-wrap: wrap; gap: 0.5rem;
+      margin-top: 2rem;
+    }
+
+    .tag {
+      padding: 0.4rem 1rem;
+      border: 1px solid rgba(184,148,63,0.4);
+      color: var(--gold-light);
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .about-links { display: flex; flex-direction: column; gap: 1.5rem; }
+
+    .about-link-item {
+      display: flex; align-items: center; gap: 1rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      text-decoration: none;
+      color: var(--white);
+      transition: gap 0.2s;
+    }
+
+    .about-link-item:hover { gap: 1.5rem; }
+    .about-link-item:hover .link-icon { background: var(--gold); }
+
+    .link-icon {
+      width: 40px; height: 40px;
+      background: rgba(255,255,255,0.1);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+
+    .link-info .link-title { font-size: 0.9rem; font-weight: 500; }
+    .link-info .link-sub { font-size: 0.75rem; color: rgba(255,255,255,0.5); margin-top: 0.2rem; }
+
+    /* SKILLS */
+    .skills-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    .skill-card {
+      padding: 2rem;
+      border: 1px solid rgba(13,27,62,0.12);
+      background: var(--white);
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .skill-card:hover { border-color: var(--gold); transform: translateY(-4px); }
+
+    .skill-icon {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .skill-name {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .skill-items {
+      display: flex; flex-wrap: wrap; gap: 0.4rem;
+    }
+
+    .skill-item {
+      font-size: 0.72rem;
+      padding: 0.25rem 0.6rem;
+      background: var(--cream);
+      color: var(--gray);
+      letter-spacing: 0.04em;
+    }
+
+    .skill-level {
+      font-size: 0.7rem;
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-top: 0.75rem;
+      font-weight: 500;
+    }
+
+    /* PROJECTS */
+    .projects { background: var(--cream); }
+
+    .projects-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+
+    .project-card {
+      background: var(--white);
+      border: 1px solid rgba(13,27,62,0.08);
+      overflow: hidden;
+      transition: transform 0.3s, box-shadow 0.3s;
+      cursor: pointer;
+    }
+
+    .project-card:hover { transform: translateY(-6px); box-shadow: 0 20px 60px rgba(13,27,62,0.12); }
+
+    .project-header {
+      padding: 2rem 2rem 1rem;
+      display: flex; justify-content: space-between; align-items: flex-start;
+    }
+
+    .project-badge {
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 0.3rem 0.8rem;
+      background: var(--cream);
+      color: var(--gold);
+      font-weight: 600;
+    }
+
+    .project-grade {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--gold);
+    }
+
+    .project-body { padding: 0 2rem 2rem; }
+
+    .project-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .project-desc {
+      font-size: 0.9rem;
+      line-height: 1.7;
+      color: var(--gray);
+    }
+
+    .project-footer {
+      padding: 1.25rem 2rem;
+      border-top: 1px solid var(--cream);
+      display: flex; gap: 0.5rem; flex-wrap: wrap;
+    }
+
+    .project-tag {
+      font-size: 0.68rem;
+      padding: 0.2rem 0.6rem;
+      background: var(--navy);
+      color: var(--white);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    /* PRO */
+    .pro { background: var(--navy); color: var(--white); }
+    .pro .section-title { color: var(--white); }
+
+    .pro-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    .pro-card {
+      padding: 2rem;
+      border: 1px solid rgba(255,255,255,0.1);
+      transition: border-color 0.2s;
+    }
+
+    .pro-card:hover { border-color: var(--gold); }
+
+    .pro-card-top {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .pro-company {
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-light);
+      font-weight: 500;
+    }
+
+    .pro-period {
+      font-size: 0.7rem;
+      color: rgba(255,255,255,0.4);
+    }
+
+    .pro-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--white);
+    }
+
+    .pro-desc {
+      font-size: 0.85rem;
+      line-height: 1.7;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* CONTACT */
+    .contact {
+      background: var(--cream);
+      text-align: center;
+    }
+
+    .contact .section-label, .contact .section-label::before { margin: 0 auto; }
+    .contact .section-label { justify-content: center; }
+    .contact .section-title { margin: 0 auto 2rem; text-align: center; }
+
+    .contact-email {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(1.5rem, 3vw, 2.2rem);
+      color: var(--navy);
+      text-decoration: none;
+      display: inline-block;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--gold);
+      transition: color 0.2s;
+      margin-bottom: 3rem;
+    }
+
+    .contact-email:hover { color: var(--gold); }
+
+    .contact-socials {
+      display: flex; justify-content: center; gap: 1.5rem;
+    }
+
+    .social-btn {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.7rem 1.5rem;
+      border: 1px solid rgba(13,27,62,0.2);
+      text-decoration: none;
+      color: var(--navy);
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+    }
+
+    .social-btn:hover { background: var(--navy); color: var(--white); border-color: var(--navy); }
+
+    /* FOOTER */
+    footer {
+      background: var(--navy);
+      color: rgba(255,255,255,0.4);
+      text-align: center;
+      padding: 2rem 4rem;
+      font-size: 0.78rem;
+      letter-spacing: 0.05em;
+    }
+
+    footer span { color: var(--gold-light); }
+
+    /* ANIMATIONS */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .hero-text > * {
+      animation: fadeUp 0.7s ease forwards;
+      opacity: 0;
+    }
+
+    .hero-eyebrow { animation-delay: 0.1s; }
+    h1 { animation-delay: 0.25s; }
+    .hero-desc { animation-delay: 0.4s; }
+    .hero-cta { animation-delay: 0.55s; }
+
+    /* RESPONSIVE */
+    @media (max-width: 900px) {
+      nav { padding: 1rem 2rem; }
+      .nav-links { display: none; }
+      .hero { grid-template-columns: 1fr; padding: 7rem 2rem 4rem; }
+      .hero::before { display: none; }
+      .hero-right { display: none; }
+      section { padding: 4rem 2rem; }
+      .about-grid, .skills-grid, .projects-grid, .pro-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-logo"><span>I.</span>Hammouti</div>
+    <ul class="nav-links">
+      <li><a href="#about">À propos</a></li>
+      <li><a href="#skills">Compétences</a></li>
+      <li><a href="#projects">Projets</a></li>
+      <li><a href="#pro">Expériences</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ul>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-text">
+      <p class="hero-eyebrow">Géographe & Entrepreneur</p>
+      <h1>
+        <span class="first">Ilyas</span><br>
+        <span class="last">Hammouti</span>
+      </h1>
+      <p class="hero-desc">
+        M1 Gestion des risques naturels à Dynarisk. Cartographe, entrepreneur SaaS, et passionné par la géographie physique. Basé à Paris, orienté Suisse.
+      </p>
+      <a href="#contact" class="hero-cta">Me contacter →</a>
+    </div>
+
+    <div class="hero-right">
+      <div class="hero-stat">
+        <div class="num">20</div>
+        <div class="label">Note max obtenue</div>
+      </div>
+      <div class="hero-divider"></div>
+      <div class="hero-stat">
+        <div class="num">3+</div>
+        <div class="label">Années de licence</div>
+      </div>
+      <div class="hero-divider"></div>
+      <div class="hero-stat">
+        <div class="num">2</div>
+        <div class="label">Entreprises fondées</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section class="about" id="about">
+    <div class="section-label">À propos</div>
+    <h2 class="section-title">Géographe, cartographe<br>& entrepreneur</h2>
+    <div class="about-grid">
+      <div class="about-text">
+        <p>
+          Étudiant en Master à <span class="about-highlight">Dynarisk</span>, spécialisé dans la gestion des risques naturels, je me suis construit un parcours atypique mêlant rigueur académique et esprit entrepreneurial. De Montpellier à Yogyakarta, chaque étape a enrichi ma vision du territoire.
+        </p>
+        <p>
+          J'ai effectué mon semestre 6 à l'<span class="about-highlight">Université Gadjah Mada</span> en Indonésie, où j'ai pu étudier les dynamiques volcaniques sur le terrain — une expérience fondatrice qui oriente mes projets de recherche vers le <span class="about-highlight">volcan Dempo (Sumatra)</span>.
+        </p>
+        <p>
+          En parallèle de mes études, j'ai fondé <span class="about-highlight">INO-Geo</span> (cartographie) et <span class="about-highlight">Swisscopilot</span> (SaaS), et je suis chef de projet géographique chez <span class="about-highlight">Sorbonne Junior Conseil</span>.
+        </p>
+        <div class="about-tags">
+          <span class="tag">Risques naturels</span>
+          <span class="tag">SIG / QGIS</span>
+          <span class="tag">Télédétection</span>
+          <span class="tag">Volcanologie</span>
+          <span class="tag">SaaS</span>
+          <span class="tag">Cartographie</span>
+        </div>
+      </div>
+      <div class="about-links">
+        <a href="https://youtube.com/@Ilyas-hammouti" target="_blank" class="about-link-item">
+          <div class="link-icon">▶</div>
+          <div class="link-info">
+            <div class="link-title">Chaîne YouTube</div>
+            <div class="link-sub">Géographie, cartographie, vulgarisation</div>
+          </div>
+        </a>
+        <a href="https://linktr.ee/hammouti.ilyas" target="_blank" class="about-link-item">
+          <div class="link-icon">🌿</div>
+          <div class="link-info">
+            <div class="link-title">Linktree</div>
+            <div class="link-sub">Tous mes projets et travaux</div>
+          </div>
+        </a>
+        <a href="mailto:ilyas@hammouti.me" class="about-link-item">
+          <div class="link-icon">✉</div>
+          <div class="link-info">
+            <div class="link-title">ilyas@hammouti.me</div>
+            <div class="link-sub">Pour toute collaboration</div>
+          </div>
+        </a>
+        <div class="about-link-item" style="cursor:default">
+          <div class="link-icon">📍</div>
+          <div class="link-info">
+            <div class="link-title">Paris → Suisse (2026)</div>
+            <div class="link-sub">Expatriation prévue</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SKILLS -->
+  <section id="skills">
+    <div class="section-label">Compétences</div>
+    <h2 class="section-title">Un profil à la croisée<br>de la géographie et du numérique</h2>
+    <div class="skills-grid">
+      <div class="skill-card">
+        <div class="skill-icon">🗺️</div>
+        <div class="skill-name">Cartographie & SIG</div>
+        <div class="skill-items">
+          <span class="skill-item">QGIS</span>
+          <span class="skill-item">ArcGIS ESRI</span>
+          <span class="skill-item">Magrit</span>
+          <span class="skill-item">MicroStation</span>
+        </div>
+        <div class="skill-level">3+ ans d'expérience</div>
+      </div>
+      <div class="skill-card">
+        <div class="skill-icon">🎨</div>
+        <div class="skill-name">Design & Visualisation</div>
+        <div class="skill-items">
+          <span class="skill-item">Adobe InDesign</span>
+          <span class="skill-item">Illustrator</span>
+          <span class="skill-item">Photoshop</span>
+          <span class="skill-item">Premiere Pro</span>
+        </div>
+        <div class="skill-level">1–3 ans d'expérience</div>
+      </div>
+      <div class="skill-card">
+        <div class="skill-icon">💻</div>
+        <div class="skill-name">Bureautique & Données</div>
+        <div class="skill-items">
+          <span class="skill-item">Excel</span>
+          <span class="skill-item">Suite Office</span>
+          <span class="skill-item">OBS</span>
+          <span class="skill-item">Tinkercad</span>
+        </div>
+        <div class="skill-level">3+ ans d'expérience</div>
+      </div>
+      <div class="skill-card">
+        <div class="skill-icon">🛰️</div>
+        <div class="skill-name">Terrain & Télédétection</div>
+        <div class="skill-items">
+          <span class="skill-item">Images satellites</span>
+          <span class="skill-item">Drone</span>
+          <span class="skill-item">Enquête terrain</span>
+          <span class="skill-item">Inventaire bio</span>
+        </div>
+        <div class="skill-level">Expérience professionnelle</div>
+      </div>
+      <div class="skill-card">
+        <div class="skill-icon">🌍</div>
+        <div class="skill-name">Langues</div>
+        <div class="skill-items">
+          <span class="skill-item">Français (natif)</span>
+          <span class="skill-item">Anglais (TOEFL 78)</span>
+          <span class="skill-item">Espagnol (B1)</span>
+          <span class="skill-item">Bahasa (notions)</span>
+        </div>
+        <div class="skill-level">Profil international</div>
+      </div>
+      <div class="skill-card">
+        <div class="skill-icon">🚀</div>
+        <div class="skill-name">Entrepreneuriat</div>
+        <div class="skill-items">
+          <span class="skill-item">Gestion de projet</span>
+          <span class="skill-item">SaaS</span>
+          <span class="skill-item">Client management</span>
+          <span class="skill-item">Junior entreprise</span>
+        </div>
+        <div class="skill-level">En activité</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROJECTS -->
+  <section class="projects" id="projects">
+    <div class="section-label">Projets académiques</div>
+    <h2 class="section-title">Travaux réalisés<br>en licence</h2>
+    <div class="projects-grid">
+      <div class="project-card">
+        <div class="project-header">
+          <span class="project-badge">Analyse spatiale</span>
+          <span class="project-grade">20/20</span>
+        </div>
+        <div class="project-body">
+          <h3 class="project-title">Le vélo à Paris</h3>
+          <p class="project-desc">Analyse approfondie de la mobilité cycliste dans le 20e arrondissement et à l'échelle de Paris. Cartographie de la densité de stationnement, des accidentologies et des aménagements cyclables.</p>
+        </div>
+        <div class="project-footer">
+          <span class="project-tag">QGIS</span>
+          <span class="project-tag">Cartographie</span>
+          <span class="project-tag">Mobilité urbaine</span>
+        </div>
+      </div>
+
+      <div class="project-card">
+        <div class="project-header">
+          <span class="project-badge">Dossier communal</span>
+          <span class="project-grade">18/20</span>
+        </div>
+        <div class="project-body">
+          <h3 class="project-title">Clermont-l'Hérault</h3>
+          <p class="project-desc">Analyse des dynamiques démographiques et économiques. Étude de l'impact de la croissance urbaine sur le territoire, entre développement et préservation des espaces naturels.</p>
+        </div>
+        <div class="project-footer">
+          <span class="project-tag">Géographie urbaine</span>
+          <span class="project-tag">Terrain</span>
+          <span class="project-tag">Croquis topo</span>
+        </div>
+      </div>
+
+      <div class="project-card">
+        <div class="project-header">
+          <span class="project-badge">Terrain & Vidéo</span>
+          <span class="project-grade">L2</span>
+        </div>
+        <div class="project-body">
+          <h3 class="project-title">Lac du Salagou</h3>
+          <p class="project-desc">Étude du barrage et des enjeux de gestion de l'eau en Occitanie. Réalisation d'un documentaire avec captures drone, interviews et cartographie. Combinaison recherche académique et création visuelle.</p>
+        </div>
+        <div class="project-footer">
+          <span class="project-tag">Drone</span>
+          <span class="project-tag">Vidéo</span>
+          <span class="project-tag">Gestion de l'eau</span>
+        </div>
+      </div>
+
+      <div class="project-card">
+        <div class="project-header">
+          <span class="project-badge">Atlas</span>
+          <span class="project-grade">14/20</span>
+        </div>
+        <div class="project-body">
+          <h3 class="project-title">Atlas de la Guadeloupe</h3>
+          <p class="project-desc">Atlas cartographique sur l'impact de l'éruption de la Soufrière (1976) entre 1975 et 1982. Analyse des évolutions démographiques et agricoles post-éruption. Cartographie réalisée intégralement.</p>
+        </div>
+        <div class="project-footer">
+          <span class="project-tag">Volcanologie</span>
+          <span class="project-tag">Atlas</span>
+          <span class="project-tag">Risques naturels</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRO -->
+  <section class="pro" id="pro">
+    <div class="section-label">Expériences</div>
+    <h2 class="section-title">Parcours professionnel<br>& entrepreneurial</h2>
+    <div class="pro-grid">
+      <div class="pro-card">
+        <div class="pro-card-top">
+          <span class="pro-company">Dynarisk</span>
+          <span class="pro-period">2025 →</span>
+        </div>
+        <h3 class="pro-title">M1 — Gestion des risques</h3>
+        <p class="pro-desc">Master spécialisé dans la gestion des risques naturels. Projet de recherche sur le volcan Dempo (Sumatra, Indonésie) en vue d'élaborer un plan de prévention des catastrophes.</p>
+      </div>
+
+      <div class="pro-card">
+        <div class="pro-card-top">
+          <span class="pro-company">INO-Geo</span>
+          <span class="pro-period">En cours</span>
+        </div>
+        <h3 class="pro-title">Fondateur — Cartographie</h3>
+        <p class="pro-desc">Entreprise de cartographie et services géospatiaux. Production de données, analyse SIG et livrables cartographiques pour clients professionnels.</p>
+      </div>
+
+      <div class="pro-card">
+        <div class="pro-card-top">
+          <span class="pro-company">Swisscopilot</span>
+          <span class="pro-period">En cours</span>
+        </div>
+        <h3 class="pro-title">Co-fondateur — SaaS</h3>
+        <p class="pro-desc">Développement d'une solution SaaS. Gestion produit, développement commercial et stratégie orientée marché suisse dans la perspective d'une expatriation.</p>
+      </div>
+
+      <div class="pro-card">
+        <div class="pro-card-top">
+          <span class="pro-company">Sorbonne Junior Conseil</span>
+          <span class="pro-period">En cours</span>
+        </div>
+        <h3 class="pro-title">Chef de projet Géo</h3>
+        <p class="pro-desc">Pilotage de missions à dimension géographique au sein de la junior-entreprise de Paris 1 Panthéon-Sorbonne.</p>
+      </div>
+
+      <div class="pro-card">
+        <div class="pro-card-top">
+          <span class="pro-company">Geofit</span>
+          <span class="pro-period">Juin–Sep 2024</span>
+        </div>
+        <h3 class="pro-title">Cartographe</h3>
+        <p class="pro-desc">Interprétation d'images satellites pour identifier des structures bâties. Saisie dans un logiciel interne (MicroStation). Travail confidentiel pour usage militaire (Armée française).</p>
+      </div>
+
+      <div class="pro-card">
+        <div class="pro-card-top">
+          <span class="pro-company">UGM Yogyakarta</span>
+          <span class="pro-period">S6 — 2025</span>
+        </div>
+        <h3 class="pro-title">Échange universitaire</h3>
+        <p class="pro-desc">Semester abroad à l'Universitas Gadjah Mada, Indonésie. Cours en géographie physique et gestion des risques naturels. Initiation au bahasa indonésien.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTACT -->
+  <section class="contact" id="contact">
+    <div class="section-label">Contact</div>
+    <h2 class="section-title">Discutons d'un projet<br>ou d'une collaboration</h2>
+    <a href="mailto:ilyas@hammouti.me" class="contact-email">ilyas@hammouti.me</a>
+    <div class="contact-socials">
+      <a href="https://youtube.com/@Ilyas-hammouti" target="_blank" class="social-btn">▶ YouTube</a>
+      <a href="https://linktr.ee/hammouti.ilyas" target="_blank" class="social-btn">🌿 Linktree</a>
+      <a href="https://linkedin.com" target="_blank" class="social-btn">in LinkedIn</a>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    © 2026 <span>Ilyas Hammouti</span> — ilyas@hammouti.me — hammouti.me
+  </footer>
+
+</body>
+</html>

@@ -523,6 +523,7 @@
   // so their tiles are in the browser cache. Nothing runs while the main camera is moving.
   function scheduleWarm(from) {
     if (isMobile() || (navigator.connection && navigator.connection.saveData)) return;
+    if (new URLSearchParams(location.search).has("nowarm")) return;   // measurements: no background pre-load
     clearTimeout(warmTimer);
     const token = ++warmToken;
     if (twin) twin.stop();

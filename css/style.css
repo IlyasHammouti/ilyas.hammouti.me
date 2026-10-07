@@ -169,6 +169,24 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 .video .launch:hover .play { border-left-color: var(--accent); }
 .video iframe { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; border: 0; }
 
+/* Scroll reminder: appears after 2 s of stillness at the top of the page */
+.scrollhint {
+  position: fixed; left: 50%; bottom: 64px; z-index: 45;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 10px 18px 12px; cursor: pointer;
+  background: rgba(5, 12, 34, 0.82); border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff; font: 500 0.6875rem/1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase;
+  opacity: 0; transform: translate(-50%, 8px); pointer-events: none;
+  transition: opacity 0.6s var(--ease), transform 0.6s var(--ease);
+}
+.scrollhint.is-visible { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.scrollhint i {
+  width: 12px; height: 12px;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(45deg); animation: nudge 1.6s var(--ease) infinite;
+}
+@keyframes nudge { 0%, 100% { transform: translateY(0) rotate(45deg); } 50% { transform: translateY(7px) rotate(45deg); } }
+
 /* Locator map (bottom right): where the current chapter is */
 .inset {
   position: fixed; right: 16px; bottom: 44px; width: 330px; height: 186px; z-index: 40;
@@ -249,6 +267,7 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 @media (max-width: 899px) {
   .rail { display: none; }
   .inset { display: none; }
+  .scrollhint { top: calc(var(--bar-h) + 14px); bottom: auto; }   /* the card owns the bottom on phones */
   .bar-actions { gap: 6px; }
   .bar-actions .btn { padding: 8px 10px; font-size: 0.75rem; }
   .nav-link { margin-right: 2px; font-size: 0.75rem; }
@@ -262,4 +281,5 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
   html { scroll-behavior: auto; }
   .card { transition: none; opacity: 1; transform: none; }
   .pin.is-current::after { animation: none; }
+  .scrollhint i { animation: none; }
 }

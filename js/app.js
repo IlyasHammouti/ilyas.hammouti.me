@@ -1,6 +1,8 @@
 /* Storymap: one fixed MapLibre map, one HTML section per chapter.
    Camera, markers, basemap options and (later) GIS layers come from data-* attributes:
      data-center / data-zoom / data-pitch / data-bearing   camera
+     data-focus="lng,lat"                                  camera centre when it differs from the pin
+     data-inset="lng,lat,zoom"                             framing of the locator map
      data-points='[{"lng":..,"lat":..,"label":".."}]'      extra labelled pins
      data-basemap="satellite"                              Sentinel-2 imagery under the labels
      data-terrain="1.6"                                    3D relief (exaggeration) + hillshade
@@ -32,6 +34,8 @@
       title: d.title || "",
       year: d.year || "",
       center: parseNums(d.center),
+      focus: parseNums(d.focus) || parseNums(d.center),
+      inset: parseNums(d.inset),
       zoom: d.zoom ? Number(d.zoom) : 5,
       pitch: d.pitch ? Number(d.pitch) : 0,
       bearing: d.bearing ? Number(d.bearing) : 0,
@@ -61,7 +65,7 @@
   };
 
   const moveCamera = (m, c, duration) => m.flyTo({
-    center: c.center, zoom: c.zoom, pitch: c.pitch, bearing: c.bearing,
+    center: c.focus, zoom: c.zoom, pitch: c.pitch, bearing: c.bearing,
     padding: padding(c), duration, essential: true,
   });
 
@@ -232,25 +236,46 @@
     }, before);
   }
 
-  function spotlight(c) {
+  // Precise borders live in assets/geo/borders/<ISO2>.json (OpenStreetMap, the same data as the
+  // basemap). Without such a file the simplified world outline is used.
+  const borders = {};
+  async function getBorder(iso) {
+    if (borders[iso]) return borders[iso];
+    try {
+      const r = await fetch(`assets/geo/borders/${iso}.json`);
+      if (r.ok) return (borders[iso] = await r.json());
+    } catch (_) { /* fall back below */ }
+    const f = world && world.features.find((x) => x.properties.iso2 === iso);
+    if (f) borders[iso] = f;
+    return f || null;
+  }
+
+  let spotToken = 0;
+  async function spotlight(c) {
     if (!map.getSource("spot-dim")) return;
+    const token = ++spotToken;
     cancelAnimationFrame(spot.raf);
-    const feature = c.country && world && world.features.find((f) => f.properties.iso2 === c.country);
-    if (!feature) {
+    const fade = () => {
       map.setPaintProperty("spot-dim", "fill-opacity", 0);
       map.setPaintProperty("spot-line", "line-opacity", 0);
-      spot.country = "";
-      return;
-    }
+    };
+    if (!c.country) { fade(); return; }
+    const feature = await getBorder(c.country);
+    if (token !== spotToken) return;           // the reader has moved on
+    if (!feature) { fade(); return; }
     const polys = feature.geometry.type === "Polygon" ? [feature.geometry.coordinates] : feature.geometry.coordinates;
     if (spot.country !== c.country) {
+      const islands = polys.flatMap((p) => p.slice(1));           // enclaves stay dimmed
       map.getSource("spot-dim").setData({
-        type: "Feature", properties: {},
-        geometry: { type: "Polygon", coordinates: [WORLD_RECT, ...polys.map((p) => p[0])] },
+        type: "FeatureCollection",
+        features: [
+          { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [WORLD_RECT, ...polys.map((p) => p[0])] } },
+          ...islands.map((ring) => ({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } })),
+        ],
       });
       map.getSource("spot-line").setData({
         type: "FeatureCollection",
-        features: polys.map((p) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: p[0] } })),
+        features: polys.flatMap((p) => p).map((ring) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: ring } })),
       });
       spot.country = c.country;
     }
@@ -306,7 +331,8 @@
       el.className = "inset-pin";
       insetPins.push(new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(inset));
     });
-    inset.flyTo({ center: c.center, zoom: insetZoom(c), duration: REDUCED || instant ? 0 : 1600, essential: true });
+    const [lng, lat, z] = c.inset || [c.center[0], c.center[1], insetZoom(c)];
+    inset.flyTo({ center: [lng, lat], zoom: z, duration: REDUCED || instant ? 0 : 1600, essential: true });
   }
 
   /* ---------- main map ---------- */
@@ -522,6 +548,35 @@
     box.appendChild(btn);
   });
 
+
+  // Fonts and images finishing after the first scroll can shift the page; until the reader
+  // takes over, keep a deep-linked chapter (e.g. "Back to the map") centred.
+  function keepDeepLinkInView(i) {
+    let moved = false;
+    ["wheel", "touchstart", "keydown", "pointerdown"].forEach((ev) =>
+      addEventListener(ev, () => { moved = true; }, { once: true, passive: true }));
+    const realign = () => { if (!moved) steps[i].scrollIntoView({ behavior: "instant", block: "center" }); };
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(realign);
+    if (document.readyState !== "complete") addEventListener("load", realign, { once: true });
+    setTimeout(realign, 1500);
+  }
+
+  /* ---------- scroll reminder: shown when the reader sits at the top, idle for 2 s ---------- */
+  const hint = document.getElementById("scrollhint");
+  if (hint) {
+    let hintTimer = 0;
+    const atTop = () => window.scrollY < 8;
+    const armHint = () => {
+      clearTimeout(hintTimer);
+      hint.classList.remove("is-visible");
+      if (atTop()) hintTimer = setTimeout(() => { if (atTop()) hint.classList.add("is-visible"); }, 2000);
+    };
+    ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "scroll"].forEach((ev) =>
+      addEventListener(ev, armHint, { passive: true }));
+    hint.addEventListener("click", () => chapters[1].el.scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "center" }));
+    armHint();
+  }
+
   /* ---------- boot ---------- */
   map.on("error", (e) => console.warn("Map:", (e && e.error && e.error.message) || e));
   map.on("style.load", () => {
@@ -537,6 +592,7 @@
     buildInset();
     ready = true;
     activate(i, true);
+    if (i > 0) keepDeepLinkInView(i);
     await setupPlaceNames(map);
   });
   addEventListener("resize", () => moveCamera(map, chapters[Math.max(current, 0)], 0));

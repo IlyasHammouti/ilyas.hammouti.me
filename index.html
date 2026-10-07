@@ -31,6 +31,7 @@
 
   <canvas id="stars" aria-hidden="true"></canvas>
   <div id="map" role="img" aria-label="Map following Ilyas Hammouti's academic and professional path"></div>
+  <button id="scrollhint" class="scrollhint" type="button" aria-label="Scroll to start the story"><span>Scroll</span><i aria-hidden="true"></i></button>
   <div id="inset" class="inset" aria-hidden="true"></div>
   <nav id="rail" class="rail" aria-label="Chapters"></nav>
 
@@ -51,7 +52,7 @@
     </section>
 
     <!-- 1 · Montpellier L1 -->
-    <section class="step" id="montpellier" data-title="Montpellier" data-year="2022" data-center="3.87,43.633" data-zoom="14">
+    <section class="step" id="montpellier" data-title="Montpellier" data-year="2022" data-center="3.87,43.633" data-zoom="12.2">
       <div class="card">
         <img class="logo" src="assets/logos/paul-valery.png" alt="Université Paul-Valéry Montpellier" style="--h:52px" height="52" loading="lazy" />
         <p class="eyebrow">2022 – 2023 · Université Paul-Valéry, Montpellier</p>
@@ -61,7 +62,7 @@
     </section>
 
     <!-- 2 · Nanterre L2 -->
-    <section class="step" id="nanterre" data-title="Nanterre" data-year="2023" data-center="2.2143,48.9054" data-zoom="14">
+    <section class="step" id="nanterre" data-title="Nanterre" data-year="2023" data-center="2.2143,48.9054" data-zoom="11.4" data-focus="2.283,48.881">
       <div class="card">
         <img class="logo" src="assets/logos/nanterre.png" alt="Université Paris Nanterre" style="--h:30px" height="30" loading="lazy" />
         <p class="eyebrow">2023 – 2024 · Université Paris Nanterre, second year</p>
@@ -84,7 +85,7 @@
     </section>
 
     <!-- 4 · Geofit -->
-    <section class="step" id="geofit" data-title="Geofit" data-year="2024" data-center="3.9388,43.6606" data-zoom="14">
+    <section class="step" id="geofit" data-title="Geofit" data-year="2024" data-center="3.9388,43.6606" data-zoom="11.7" data-focus="3.906,43.636">
       <div class="card">
         <img class="logo" src="assets/logos/geofit.png" alt="Geofit" style="--h:26px" height="26" loading="lazy" />
         <p class="eyebrow">Jun – Aug 2024 · Geofit, Le Crès (Montpellier)</p>
@@ -95,7 +96,7 @@
     </section>
 
     <!-- 5 · Paris 1 L3 -->
-    <section class="step" id="paris1" data-title="Sorbonne" data-year="2024" data-center="2.3426,48.8447" data-zoom="14.6">
+    <section class="step" id="paris1" data-title="Sorbonne" data-year="2024" data-center="2.3426,48.8447" data-zoom="12.2">
       <div class="card">
         <img class="logo" src="assets/logos/paris1.png" alt="Université Paris 1 Panthéon-Sorbonne" style="--h:40px" height="40" loading="lazy" />
         <p class="eyebrow">2024 – 2025 · Université Paris 1 Panthéon-Sorbonne</p>
@@ -105,7 +106,7 @@
     </section>
 
     <!-- 6 · Yogyakarta -->
-    <section class="step" id="yogyakarta" data-title="Yogyakarta" data-year="2025" data-center="110.3776,-7.7713" data-zoom="11" data-pitch="30">
+    <section class="step" id="yogyakarta" data-title="Yogyakarta" data-year="2025" data-center="110.3776,-7.7713" data-zoom="11" data-pitch="30" data-inset="110,-1,2.3">
       <div class="card">
         <img class="logo" src="assets/logos/ugm.png" alt="Universitas Gadjah Mada" style="--h:58px" height="58" loading="lazy" />
         <p class="eyebrow">Feb – Jun 2025 · Universitas Gadjah Mada, Indonesia</p>
@@ -117,7 +118,7 @@
     </section>
 
     <!-- 7 · Dynarisk -->
-    <section class="step" id="dynarisk" data-title="Dynarisk" data-year="2025" data-center="2.3426,48.8447" data-zoom="14.2">
+    <section class="step" id="dynarisk" data-title="Dynarisk" data-year="2025" data-center="2.3426,48.8447" data-zoom="12">
       <div class="card">
         <img class="logo" src="assets/logos/paris1.png" alt="Université Paris 1 Panthéon-Sorbonne" style="--h:40px" height="40" loading="lazy" />
         <p class="eyebrow">Sept 2025 · Université Paris 1 Panthéon-Sorbonne</p>
@@ -129,7 +130,7 @@
     </section>
 
     <!-- 8 · Sorbonne Junior Conseil -->
-    <section class="step" id="sjc" data-title="Junior Conseil" data-year="2025" data-center="2.3436,48.8486" data-zoom="15">
+    <section class="step" id="sjc" data-title="Junior Conseil" data-year="2025" data-center="2.3436,48.8486" data-zoom="12.6">
       <div class="card">
         <img class="logo" src="assets/logos/sjc.png" alt="Sorbonne Junior Conseil" style="--h:76px" height="76" loading="lazy" />
         <p class="eyebrow">Oct 2025 – Jul 2026 · Sorbonne Junior Conseil, Paris</p>
@@ -139,7 +140,7 @@
     </section>
 
     <!-- 9 · Dempo -->
-    <section class="step" id="dempo" data-basemap="satellite" data-title="Mount Dempo" data-year="2025" data-center="103.1333,-4.0333" data-zoom="12.6" data-pitch="68" data-bearing="157" data-terrain="1.5">
+    <section class="step" id="dempo" data-basemap="satellite" data-title="Mount Dempo" data-year="2025" data-center="103.1333,-4.0333" data-zoom="12.6" data-pitch="68" data-bearing="157" data-terrain="1.5" data-inset="110,-1,2.3">
       <div class="card">
         <p class="eyebrow">2025 – 2026 · First-year thesis · Mount Dempo, Sumatra</p>
         <h2>Geomorphology of a volcano</h2>
@@ -163,7 +164,7 @@
     </section>
 
     <!-- 11 · Hazard Watch -->
-    <section class="step" id="hazardwatch" data-title="Hazard Watch" data-year="2026" data-center="40,35" data-zoom="1.6" data-points='[{"lng":11.9,"lat":44.4,"label":"Emilia-Romagna"},{"lng":24.6,"lat":56.9,"label":"Latvia"},{"lng":85.3,"lat":28.1,"label":"Rasuwa, Nepal"}]'>
+    <section class="step" id="hazardwatch" data-title="Hazard Watch" data-year="2026" data-center="40,35" data-zoom="1.6" data-points='[{"lng":11.9,"lat":44.4,"label":"Emilia-Romagna"},{"lng":24.6,"lat":56.9,"label":"Latvia"},{"lng":85.3,"lat":28.1,"label":"Rasuwa, Nepal"}]' data-inset="49,43,1.35">
       <div class="card card-wide">
         <img class="logo" src="assets/logos/hazard-watch.png" alt="Hazard Watch" style="--h:28px" height="28" loading="lazy" />
         <p class="eyebrow">Since August 2026 · Personal project</p>
@@ -181,7 +182,7 @@
     </section>
 
     <!-- 12 · Recommendation -->
-    <section class="step" id="reference" data-title="Reference" data-year="2026" data-center="2.3426,48.8447" data-zoom="13">
+    <section class="step" id="reference" data-title="Reference" data-year="2026" data-center="2.3426,48.8447" data-zoom="12.2">
       <div class="card card-wide">
         <p class="eyebrow">September 2026 · Letter of recommendation</p>
         <blockquote class="quote">“Rather than simply completing the required exercises, he contributed his own ideas, explored different analytical approaches, and experimented with alternative methods for processing and visualizing data, notably with Google Earth Engine.”</blockquote>
@@ -201,7 +202,7 @@
     </section>
 
     <!-- 14 · Zurich -->
-    <section class="step" id="zurich" data-title="Zurich" data-year="2027" data-center="8.5417,47.3769" data-zoom="13.6">
+    <section class="step" id="zurich" data-title="Zurich" data-year="2027" data-center="8.5417,47.3769" data-zoom="12.2">
       <div class="card card-wide">
         <p class="eyebrow">From 11 January 2027 · Zurich</p>
         <h2>Next: Zurich</h2>

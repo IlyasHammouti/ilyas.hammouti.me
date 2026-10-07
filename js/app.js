@@ -66,7 +66,7 @@
   const padding = (c) => {
     if (isMobile()) {
       const card = c.el.querySelector(".card");
-      const h = card ? Math.min(card.offsetHeight, innerHeight * 0.52, 460) : 0;
+      const h = card ? card.offsetHeight : 0;   // already capped by the css max-height
       return { top: 70, bottom: Math.round(h + 44), left: 16, right: 16 };
     }
     const card = c.el.querySelector(".card");
@@ -404,10 +404,21 @@
     center: start.center,
     zoom: start.zoom,
     interactive: false,           // page scroll must never be hijacked by the map
-    attributionControl: { compact: true },
+    attributionControl: isMobile() ? false : { compact: true },
     maxTileCacheSize: 200,
     ...(isMobile() ? { pixelRatio: Math.min(window.devicePixelRatio || 1, 2) } : {}),
   });
+
+  // Phones: the sources live at the very top (under the header, away from the cards), folded to the "i".
+  if (isMobile()) {
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
+    const fold = () => {
+      const el = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
+      if (el) { el.classList.remove("maplibregl-compact-show"); el.removeAttribute("open"); }
+    };
+    map.on("load", fold);
+    map.on("idle", fold);
+  }
 
   // Debug handle for measuring (open the page with ?debug).
   if (new URLSearchParams(location.search).has("debug")) window.__storymap = { map, twin: () => twin };
@@ -630,9 +641,9 @@
     });
   }
 
-  /* ---------- portfolio links remember where the reader was ---------- */
+  /* ---------- portfolio and contact links remember where the reader was ---------- */
   document.addEventListener("click", (e) => {
-    const a = e.target.closest('a[href^="portfolio.html"]');
+    const a = e.target.closest('a[href^="portfolio.html"], a[href^="contact.html"]');
     if (!a || current < 0) return;
     const url = new URL(a.getAttribute("href"), location.href);
     url.searchParams.set("from", chapters[current].id);

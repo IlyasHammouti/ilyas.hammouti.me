@@ -257,6 +257,44 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 
 .foot { position: relative; z-index: 10; padding: 28px var(--gutter); font: 400 0.75rem/1.4 var(--font-mono); color: var(--muted); background: var(--paper); border-top: 1px solid var(--rule); }
 
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.short { display: none; }
+.alt { display: none; }
+
+/* Contact page */
+.contact-page h1 { margin-bottom: 8px; }
+.contact-direct { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--ink); }
+.mail-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 4px 0 10px; }
+.big-mail {
+  font: 600 clamp(1.45rem, 5.2vw, 2.25rem)/1.15 var(--font-sans); letter-spacing: -0.02em;
+  color: var(--ink); text-decoration: none; border-bottom: 2px solid var(--accent); overflow-wrap: anywhere;
+}
+.big-mail:hover { color: var(--accent); }
+.contact-list { list-style: none; margin: 22px 0 0; padding: 0; border-top: 1px solid var(--rule); }
+.contact-list a {
+  display: flex; justify-content: space-between; gap: 16px; padding: 13px 0; text-decoration: none;
+  border-bottom: 1px solid var(--rule); transition: padding 0.2s var(--ease);
+}
+.contact-list a:hover { padding-left: 8px; }
+.contact-list .k { font: 500 0.6875rem/1.6 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.contact-list .v { font-weight: 500; overflow-wrap: anywhere; text-align: right; }
+
+.contact-form { margin-top: 44px; padding-top: 20px; border-top: 1px solid var(--rule); }
+.contact-form form { margin-top: 18px; max-width: 520px; }
+.contact-form label { display: block; margin: 14px 0 6px; font: 500 0.6875rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.contact-form .req { color: var(--muted); letter-spacing: 0.04em; text-transform: none; margin-left: 6px; }
+.contact-form input[type="text"], .contact-form input[type="email"], .contact-form textarea {
+  width: 100%; padding: 11px 12px; font: 400 1rem/1.4 var(--font-sans); color: var(--ink);
+  background: var(--card); border: 1px solid var(--ink); border-radius: 0; resize: vertical;
+}
+.contact-form input:focus-visible, .contact-form textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.contact-form .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 18px; }
+.form-actions .btn { padding: 12px 22px; cursor: pointer; }
+.status { margin: 0; font-size: 0.875rem; }
+.status[data-kind="error"] { color: var(--accent); }
+.note.small { margin-top: 14px; font-size: 0.75rem; }
+
 /* Portfolio page */
 .page { max-width: 760px; margin: 0 auto; padding: calc(var(--bar-h) + 56px) var(--gutter) 80px; }
 .page h1 { font-size: clamp(2rem, 5vw, 3rem); }
@@ -268,19 +306,28 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 
 /* Mobile (up to 899px): the chapters are a horizontal strip of cards along the bottom, one card in
    the middle with its neighbours peeking in from both sides; the map fills the rest of the screen.
-   Swiping the strip changes chapter, a fast swipe can skip several. The page itself does not scroll. */
+   Swiping the strip changes chapter, a fast swipe can skip several. The page itself does not scroll.
+   Type is kept small so a card fits without scrolling; a few long ones may scroll vertically, never sideways. */
 @media (max-width: 899px) {
   :root { --m-card: min(84vw, 440px); }
   html.story-page, html.story-page body { height: 100%; overflow: hidden; overscroll-behavior: none; }
   .rail, .inset, .scrollhint, .foot { display: none; }
   .hint-desktop { display: none; }
   .hint-mobile { display: inline; }
+  .long { display: none; }
+  .short { display: inline; }
 
-  .bar-actions { gap: 6px; }
+  /* header: brand, Portfolio, Contact, Resume */
+  .bar { padding: 0 14px; }
+  .bar-actions { gap: 4px; align-items: center; }
   .bar-actions .btn { padding: 8px 10px; font-size: 0.75rem; }
-  .nav-link { margin-right: 2px; font-size: 0.75rem; }
-  .btn-contact { display: none; }
-  .long { display: none; }                      /* "← Back to the map" becomes "← map" */
+  .nav-link { margin-right: 0; padding: 8px 6px; font-size: 0.75rem; }
+  .btn-contact { border-color: transparent; background: none; padding: 8px 6px; }
+  .brand { font-size: 0.9375rem; }
+
+  /* sources: top right, under the header, folded to the "i" button */
+  .maplibregl-ctrl-top-right { top: calc(var(--bar-h) + 4px); right: 2px; }
+  .maplibregl-ctrl-attrib.maplibregl-compact-show { max-width: 78vw; }
 
   #story {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
@@ -288,38 +335,62 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
     overflow-x: auto; overflow-y: hidden;
     scroll-snap-type: x mandatory; overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch; scrollbar-width: none;
-    padding: 0 calc((100vw - var(--m-card)) / 2) calc(14px + env(safe-area-inset-bottom, 0px));
+    padding: 0 calc((100vw - var(--m-card)) / 2) calc(12px + env(safe-area-inset-bottom, 0px));
     pointer-events: auto;
   }
   #story::-webkit-scrollbar { display: none; }
   .step { flex: 0 0 var(--m-card); min-height: 0; padding: 0 6px; align-items: flex-end; scroll-snap-align: center; }
+
   .card, .card-wide {
-    --card-w: 100%; width: 100%;
-    max-height: 52vh; max-height: min(52dvh, 460px); overflow-y: auto;
-    padding: 18px 18px 16px;
+    --card-w: 100%; width: 100%; min-width: 0;
+    max-height: 54vh; max-height: min(54dvh, 480px);
+    overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere;
+    padding: 14px 16px 14px;
     opacity: 0.55; transform: scale(0.96); transform-origin: bottom center;
+    scrollbar-width: thin; scrollbar-color: var(--rule) transparent;
   }
+  .step.tall .card { max-height: 62vh; max-height: min(62dvh, 520px); }   /* the few denser cards get more room */
   .step.is-active .card { opacity: 1; transform: none; }
+  .card::before { padding: 5px 7px; font-size: 0.625rem; }
+
+  /* small type */
+  .eyebrow { margin-bottom: 8px; padding-right: 28px; font-size: 0.625rem; line-height: 1.4; letter-spacing: 0.02em; }
+  .eyebrow .org, .eyebrow .opt, .note.todo { display: none; }
+  .eyebrow .alt { display: inline; }                 /* the logo already names the institution */
+  .card h1 { margin-bottom: 8px; font-size: clamp(1.7rem, 8vw, 2.1rem); }
+  .card h2 { margin-bottom: 8px; font-size: 1.0625rem; line-height: 1.2; }
+  .card p { margin-bottom: 8px; font-size: 0.8125rem; line-height: 1.5; }
+  .card .lead { font-size: 0.875rem; }
+  .note { font-size: 0.6875rem; }
+  .hint { margin-top: 12px !important; font-size: 0.625rem; line-height: 1.4; }
+  .logo { height: calc(var(--h, 32px) * 0.72); margin-bottom: 10px; }
+  .formula { margin: 2px 0 10px !important; padding: 7px 9px; font-size: 0.6875rem; overflow-wrap: anywhere; }
+  .links { margin-top: 8px; padding-top: 8px; font-size: 0.75rem; }
+  .links li + li { margin-top: 4px; }
+  .plain li { padding: 7px 0; font-size: 0.8125rem; }
+  .cta { gap: 6px; margin-top: 10px; }
+  .card .btn { padding: 8px 12px; font-size: 0.75rem; }
+  .quote { margin-bottom: 8px; padding-left: 12px; font-size: 0.9375rem; line-height: 1.4; }
+  .quote-end { font-size: 0.8125rem; }
+  .byline { margin: 8px 0 10px !important; font-size: 0.6875rem; }
+  .pull { margin-top: 10px; padding: 8px 10px; font-size: 0.75rem; }
+  .pull cite { font-size: 0.5625rem; }
   .pin-label-left { left: auto; right: 16px; }   /* keeps labels near the right edge on screen */
-  .card { scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
-  .eyebrow { font-size: 0.625rem; letter-spacing: 0.04em; padding-right: 30px; }
-  .card h1 { font-size: clamp(2rem, 9vw, 2.6rem); }
-  .card h2 { font-size: 1.3rem; }
-  .card p { font-size: 0.9375rem; }
-  .card .lead { font-size: 1rem; }
-  .logo { margin-bottom: 12px; }
-  .links { margin-top: 10px; padding-top: 10px; }
 
   /* Videos: a small thumbnail beside the title; tapping opens the player in place */
   .video {
-    display: flex; align-items: center; gap: 12px; aspect-ratio: auto;
-    margin-top: 10px; padding: 6px; background: var(--paper); cursor: pointer;
+    display: flex; align-items: center; gap: 10px; aspect-ratio: auto;
+    margin-top: 8px; padding: 5px; background: var(--paper); cursor: pointer;
   }
-  .video .launch { position: relative; inset: auto; flex: 0 0 96px; width: 96px; height: auto; aspect-ratio: 16 / 9; }
+  .video .launch { position: relative; inset: auto; flex: 0 0 80px; width: 80px; height: auto; aspect-ratio: 16 / 9; }
   .video .cap { display: none; }
-  .video .play { left: 8px; bottom: 8px; border-left-width: 10px; border-top-width: 6px; border-bottom-width: 6px; }
-  .video .vt { display: block; flex: 1; font: 500 0.8125rem/1.3 var(--font-sans); }
+  .video .play { left: 6px; bottom: 6px; border-left-width: 8px; border-top-width: 5px; border-bottom-width: 5px; }
+  .video .vt { display: block; flex: 1; font: 500 0.75rem/1.3 var(--font-sans); }
   .video.is-playing { display: block; padding: 0; aspect-ratio: 16 / 9; background: #000; }
+
+  /* contact page */
+  .page { padding-top: calc(var(--bar-h) + 28px); }
+  .contact-list a { padding: 11px 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

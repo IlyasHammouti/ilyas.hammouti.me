@@ -1,15 +1,22 @@
 /* Storymap: one fixed MapLibre map, one HTML section per chapter.
-   Camera, markers, basemap and (later) GIS layers are read from data-* attributes. */
+   Camera, markers, basemap options and (later) GIS layers come from data-* attributes:
+     data-center / data-zoom / data-pitch / data-bearing   camera
+     data-points='[{"lng":..,"lat":..,"label":".."}]'      extra labelled pins
+     data-basemap="satellite"                              Sentinel-2 imagery under the labels
+     data-terrain="1.6"                                    3D relief (exaggeration) + hillshade
+     data-buildings="true"                                 3D buildings
+     data-layers='[{"id":..,"url":..,"type":..}]'          GIS layers, shown only on that chapter */
 (() => {
   const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
   const SAT_TILES = "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg";
   const SAT_ATTRIBUTION =
     '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless</a> by EOX (contains modified Copernicus Sentinel data 2024)';
-  const DEFAULT_BASEMAP = "map"; // "map" | "satellite"; override per chapter with data-basemap
+  const DEM_TILES = "https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png";
+  const DEM_ATTRIBUTION = "Terrain: Mapzen / AWS Terrain Tiles (SRTM, ASTER and others)";
 
-  // Countries whose place names stay visible; everything else is masked.
-  const KEPT_COUNTRIES = ["France", "Switzerland", "Indonesia", "Nepal", "Italy", "Latvia"];
+  const FOREIGN_SHARE = 0.5;      // share of the biggest foreign place names kept in view
+  const WARM_AHEAD = 3;           // chapters pre-loaded ahead of the one being read
 
   const steps = [...document.querySelectorAll(".step")];
   const rail = document.getElementById("rail");
@@ -19,7 +26,6 @@
 
   const chapters = steps.map((el, i) => {
     const d = el.dataset;
-    const bounds = parseNums(d.bounds);
     return {
       el,
       id: el.id,
@@ -29,8 +35,9 @@
       zoom: d.zoom ? Number(d.zoom) : 5,
       pitch: d.pitch ? Number(d.pitch) : 0,
       bearing: d.bearing ? Number(d.bearing) : 0,
-      bounds: bounds ? [[bounds[0], bounds[1]], [bounds[2], bounds[3]]] : null,
-      basemap: d.basemap || DEFAULT_BASEMAP,
+      satellite: d.basemap === "satellite",
+      terrain: d.terrain ? Number(d.terrain) : 0,
+      buildings: d.buildings === "true",
       points: d.points ? JSON.parse(d.points) : [],
       layers: d.layers ? JSON.parse(d.layers) : [],
       index: i,
@@ -42,82 +49,174 @@
     if (card && i > 0) card.dataset.n = String(i).padStart(2, "0");
   });
 
-  /* ---------- helpers ---------- */
+  /* ---------- camera ---------- */
   // Keep the focus point clear of the card: reserve the card's real width on desktop,
   // the lower half of the screen on mobile.
   const padding = (c) => {
     if (innerWidth < 900) return { top: 80, bottom: Math.round(innerHeight * 0.55), left: 20, right: 20 };
     const card = c.el.querySelector(".card");
     const reserved = card ? card.getBoundingClientRect().right + 24 : 0;
-    return { top: 80, bottom: 40, left: Math.min(reserved, Math.round(innerWidth * 0.62)), right: 110 };
+    const railRoom = innerWidth >= 1200 ? 190 : 80;
+    return { top: 80, bottom: 40, left: Math.min(reserved, Math.round(innerWidth * 0.62)), right: railRoom };
   };
 
-  const cameraOptions = (c, duration) => ({
-    padding: padding(c), pitch: c.pitch, bearing: c.bearing, duration, essential: true,
+  const moveCamera = (m, c, duration) => m.flyTo({
+    center: c.center, zoom: c.zoom, pitch: c.pitch, bearing: c.bearing,
+    padding: padding(c), duration, essential: true,
   });
-
-  function moveCamera(m, c, duration) {
-    const o = cameraOptions(c, duration);
-    if (c.bounds) {
-      try {
-        m.fitBounds(c.bounds, { ...o, maxZoom: c.zoom });
-        return;
-      } catch (err) {
-        console.warn("fitBounds failed, centring on the bounds instead:", err);
-      }
-      const [[w, s], [e, n]] = c.bounds;
-      m.flyTo({ center: [(w + e) / 2, (s + n) / 2], zoom: c.zoom, ...o });
-      return;
-    }
-    m.flyTo({ center: c.center, zoom: c.zoom, ...o });
-  }
 
   const initialIndex = () => {
     const i = chapters.findIndex((c) => c.id === location.hash.slice(1));
     return i > 0 ? i : 0;
   };
 
-  /* ---------- basemap: satellite layer + toponym mask ---------- */
-  function addSatellite(m) {
+  /* ---------- optional basemap layers: satellite, relief, 3D buildings ---------- */
+  const firstSymbolId = (m) => {
+    const l = m.getStyle().layers.find((x) => x.type === "symbol");
+    return l && l.id;
+  };
+
+  function addExtras(m) {
+    const before = firstSymbolId(m);
     m.addSource("sat", { type: "raster", tiles: [SAT_TILES], tileSize: 256, maxzoom: 13, attribution: SAT_ATTRIBUTION });
-    const firstSymbol = m.getStyle().layers.find((l) => l.type === "symbol");
     m.addLayer({
       id: "sat", type: "raster", source: "sat",
       paint: { "raster-opacity": 0, "raster-opacity-transition": { duration: REDUCED ? 0 : 900, delay: 0 } },
-    }, firstSymbol && firstSymbol.id);
+    }, before);
+
+    const demSource = { type: "raster-dem", tiles: [DEM_TILES], tileSize: 256, maxzoom: 14, encoding: "terrarium" };
+    m.addSource("dem", { ...demSource, attribution: DEM_ATTRIBUTION });   // 3D terrain
+    m.addSource("dem-shade", demSource);                                   // hillshade (separate source for quality)
+    m.addLayer({
+      id: "hillshade", type: "hillshade", source: "dem-shade", layout: { visibility: "none" },
+      paint: { "hillshade-exaggeration": 0.45, "hillshade-shadow-color": "#05080c", "hillshade-highlight-color": "#ffffff" },
+    }, before);
+
+    m.addLayer({
+      id: "buildings-3d", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building",
+      minzoom: 13, layout: { visibility: "none" },
+      paint: {
+        "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 6],
+          0, "#e6e1d6", 40, "#d3cdc0", 120, "#bdb5a5"],
+        "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6],
+        "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+        "fill-extrusion-opacity": 0.92,
+        "fill-extrusion-vertical-gradient": true,
+      },
+    }, before);
   }
 
   // Over imagery only the larger place names stay, small ones just add noise.
   const FINE_LABELS = ["label_village", "label_other", "label_town", "highway-name-minor", "highway-name-path", "highway-shield-non-us"];
-  function setSatellite(m, on) {
+
+  function applyChapter(m, c) {
     if (!m.getLayer("sat")) return;
-    m.setPaintProperty("sat", "raster-opacity", on ? 1 : 0);
-    FINE_LABELS.forEach((id) => m.getLayer(id) && m.setLayoutProperty(id, "visibility", on ? "none" : "visible"));
+    const projection = c.terrain ? "mercator" : "globe";
+    if (m.__projection !== projection && m.setProjection) {
+      m.setProjection({ type: projection });
+      m.__projection = projection;
+    }
+    m.setPaintProperty("sat", "raster-opacity", c.satellite ? 1 : 0);
+    FINE_LABELS.forEach((id) => m.getLayer(id) && m.setLayoutProperty(id, "visibility", c.satellite ? "none" : "visible"));
+    m.setLayoutProperty("hillshade", "visibility", c.terrain ? "visible" : "none");
+    m.setLayoutProperty("buildings-3d", "visibility", c.buildings ? "visible" : "none");
+    m.setTerrain(c.terrain ? { source: "dem", exaggeration: c.terrain } : null);
   }
 
-  // Keep only the place names of countries that appear in the CV.
-  async function maskToponyms(m) {
-    let countries;
+  /* ---------- place names ---------- */
+  // Countries that appear in the CV are derived from the chapters' coordinates, so a new
+  // chapter in a new country is picked up without touching this file.
+  // Their place names show in full; elsewhere only the biggest ~50% in view are kept.
+  const PLACE_LAYERS = ["label_state", "label_city", "label_city_capital", "label_town", "label_village", "label_other"];
+  const COUNTRY_LAYERS = ["label_country_1", "label_country_2", "label_country_3"];
+  const NAME_EN = ["coalesce", ["get", "name_en"], ["get", "name:latin"], ["get", "name"]];
+
+  const ringHas = (pt, ring) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const polyHas = (pt, poly) => ringHas(pt, poly[0]) && !poly.slice(1).some((h) => ringHas(pt, h));
+  const countryHas = (f, pt) => (f.geometry.type === "Polygon"
+    ? polyHas(pt, f.geometry.coordinates)
+    : f.geometry.coordinates.some((p) => polyHas(pt, p)));
+
+  const original = {};   // layer id -> filter before masking
+  const mask = { polys: null, iso: [], foreignCity: 3, foreignCountry: 1 };
+
+  function cvCountries(world) {
+    const pts = chapters.flatMap((c) => [...(c.center ? [c.center] : []), ...c.points.map((p) => [p.lng, p.lat])]);
+    const found = new Map();
+    pts.forEach((pt) => {
+      const f = world.features.find((x) => countryHas(x, pt));
+      if (f) found.set(f.properties.a3, f);
+    });
+    return [...found.values()];
+  }
+
+  function applyMask(m) {
+    const inCv = ["within", mask.polys];
+    const rank = ["coalesce", ["get", "rank"], 99];
+    const cityKeep = ["any", inCv, ["<=", rank, mask.foreignCity]];
+    const countryKeep = ["any", ["in", ["get", "iso_a2"], ["literal", mask.iso]], ["<=", rank, mask.foreignCountry]];
+    PLACE_LAYERS.forEach((id) => m.getLayer(id) && m.setFilter(id, ["all", original[id], cityKeep]));
+    COUNTRY_LAYERS.forEach((id) => m.getLayer(id) && m.setFilter(id, ["all", original[id], countryKeep]));
+  }
+
+  // Keep the top FOREIGN_SHARE of the foreign place names currently in view (by importance rank).
+  function updateForeignThresholds(m) {
+    if (!mask.polys) return;
+    const bounds = m.getBounds();
+    const cvFeatures = mask.polys.features;
+    const cities = new Map(), countries = new Map();
+    m.querySourceFeatures("openmaptiles", { sourceLayer: "place" }).forEach((f) => {
+      const p = f.properties, g = f.geometry;
+      if (!p || g.type !== "Point" || !bounds.contains(g.coordinates)) return;
+      const key = p.name_en || p.name;
+      if (p.class === "country") {
+        if (!mask.iso.includes(p.iso_a2)) countries.set(key, p.rank ?? 99);
+      } else if (["city", "town", "state"].includes(p.class)) {
+        if (!cities.has(key) && !cvFeatures.some((cf) => countryHas(cf, g.coordinates))) cities.set(key, p.rank ?? 99);
+      }
+    });
+    const cut = (set) => {
+      const r = [...set.values()].sort((a, b) => a - b);
+      return r.length ? r[Math.max(0, Math.ceil(r.length * FOREIGN_SHARE) - 1)] : 99;
+    };
+    const next = { city: cut(cities), country: cut(countries) };
+    if (next.city !== mask.foreignCity || next.country !== mask.foreignCountry) {
+      mask.foreignCity = next.city;
+      mask.foreignCountry = next.country;
+      applyMask(m);
+    }
+  }
+
+  async function setupPlaceNames(m) {
+    // International names only (no local script next to them).
+    [...PLACE_LAYERS, ...COUNTRY_LAYERS, "water_name_point_label", "water_name_line_label"].forEach((id) => {
+      if (m.getLayer(id)) m.setLayoutProperty(id, "text-field", NAME_EN);
+    });
+    ["water_name_point_label", "water_name_line_label"].forEach((id) => {
+      if (!m.getLayer(id)) return;
+      m.setFilter(id, ["all", m.getFilter(id), ["!", ["in", ["get", "class"], ["literal", ["ocean", "sea"]]]]]);
+    });
+    [...PLACE_LAYERS, ...COUNTRY_LAYERS].forEach((id) => { if (m.getLayer(id)) original[id] = m.getFilter(id); });
+
+    let world;
     try {
-      countries = await (await fetch("assets/geo/countries.json")).json();
+      world = await (await fetch("assets/geo/countries.json")).json();
     } catch (err) {
-      console.warn("Toponym mask unavailable:", err);
+      console.warn("Place-name mask unavailable:", err);
       return;
     }
-    const inside = ["within", countries];
-    const keepCountry = ["in", ["coalesce", ["get", "name_en"], ["get", "name"]], ["literal", KEPT_COUNTRIES]];
-    const mask = {
-      label_country_1: keepCountry, label_country_2: keepCountry, label_country_3: keepCountry,
-      label_state: inside, label_city: inside, label_city_capital: inside,
-      label_town: inside, label_village: inside, label_other: inside,
-      water_name_point_label: ["!", ["in", ["get", "class"], ["literal", ["ocean", "sea"]]]],
-      water_name_line_label: ["!", ["in", ["get", "class"], ["literal", ["ocean", "sea"]]]],
-    };
-    Object.entries(mask).forEach(([id, extra]) => {
-      if (!m.getLayer(id)) return;
-      const orig = m.getFilter(id);
-      m.setFilter(id, orig ? ["all", orig, extra] : extra);
-    });
+    const cv = cvCountries(world);
+    mask.polys = { type: "FeatureCollection", features: cv };
+    mask.iso = cv.map((f) => f.properties.iso2);
+    applyMask(m);
+    m.on("idle", () => updateForeignThresholds(m));
   }
 
   /* ---------- main map ---------- */
@@ -155,7 +254,6 @@
     });
   }
 
-  // GIS layers: <section data-layers='[{"id":"x","url":"assets/geo/x.geojson","type":"fill","paint":{...}}]'>
   const LAYER_DEFAULTS = {
     fill: { "fill-color": "#c4301c", "fill-opacity": 0.35 },
     line: { "line-color": "#12161c", "line-width": 1.5 },
@@ -181,48 +279,75 @@
     current = index;
     const c = chapters[index];
     steps.forEach((s, i) => s.classList.toggle("is-active", i === index));
-    [...rail.children].forEach((b, i) => b.classList.toggle("is-active", i === index));
+    [...rail.children].forEach((b, i) => {
+      b.classList.toggle("is-active", i === index);
+      b.setAttribute("aria-current", i === index ? "true" : "false");
+    });
     markers.forEach((m) => {
       m.pin.style.display = m.chapterIndex <= index ? "" : "none";
       m.pin.classList.toggle("is-current", m.chapterIndex === index);
     });
-    setSatellite(map, c.basemap === "satellite");
+    applyChapter(map, c);
     showLayers(index);
     moveCamera(map, c, REDUCED || instant ? 0 : 2600);
     try { history.replaceState(null, "", index === 0 ? location.pathname : "#" + c.id); } catch (_) { /* ignore */ }
+    scheduleWarm(index);
   }
 
-  /* ---------- warm the tile cache for every chapter ---------- */
-  // A hidden twin map visits each chapter's view once, so tiles are already in the
-  // browser cache when the reader gets there.
-  async function warmCache() {
-    if (navigator.connection && navigator.connection.saveData) return;
+  /* ---------- rolling pre-load: while chapter N is read, N+1.. load in the background ---------- */
+  // A hidden twin map visits the upcoming chapters' views, so their tiles (vector, imagery,
+  // relief, 3D buildings, glyphs) are in the browser cache when the camera gets there.
+  let twin = null;
+  let warmToken = 0;
+  let warmTimer = 0;
+
+  async function ensureTwin() {
+    if (twin) return twin;
     const host = document.createElement("div");
     host.setAttribute("aria-hidden", "true");
-    host.style.cssText = `position:fixed;left:0;top:0;width:${innerWidth}px;height:${innerHeight}px;opacity:0;pointer-events:none;z-index:-1`;
+    host.style.cssText = `position:fixed;left:0;top:0;width:${innerWidth}px;height:${innerHeight}px;opacity:0;pointer-events:none;z-index:-2`;
     document.body.appendChild(host);
-    const twin = new maplibregl.Map({ container: host, style: STYLE_URL, interactive: false, attributionControl: false, fadeDuration: 0 });
-    twin.on("error", () => {}); // best-effort warm-up: tile hiccups are irrelevant here
-    await new Promise((r) => twin.once("load", r));
-    addSatellite(twin);
-    for (const c of chapters) {
-      setSatellite(twin, c.basemap === "satellite");
-      moveCamera(twin, c, 0);
-      await new Promise((resolve) => {
-        const t = setTimeout(resolve, 6000);
-        twin.once("idle", () => { clearTimeout(t); resolve(); });
-      });
-    }
-    twin.remove();
-    host.remove();
+    const m = new maplibregl.Map({ container: host, style: STYLE_URL, interactive: false, attributionControl: false, fadeDuration: 0 });
+    m.on("error", () => {}); // best effort: tile hiccups are irrelevant here
+    await new Promise((r) => m.once("load", r));
+    addExtras(m);
+    twin = m;
+    return m;
+  }
+
+  const settle = (m) => new Promise((resolve) => {
+    const t = setTimeout(resolve, 7000);
+    m.once("idle", () => { clearTimeout(t); resolve(); });
+  });
+
+  function scheduleWarm(from) {
+    if (navigator.connection && navigator.connection.saveData) return;
+    clearTimeout(warmTimer);
+    const token = ++warmToken;
+    warmTimer = setTimeout(async () => {
+      try {
+        const m = await ensureTwin();
+        for (let k = 1; k <= WARM_AHEAD; k++) {
+          const c = chapters[from + k];
+          if (!c || token !== warmToken) return;
+          applyChapter(m, c);
+          moveCamera(m, c, 0);
+          await settle(m);
+        }
+      } catch (err) {
+        console.warn("Tile pre-load skipped:", err);
+      }
+    }, 1200);
   }
 
   /* ---------- rail ---------- */
   chapters.forEach((c, i) => {
     const b = document.createElement("button");
     b.type = "button";
-    b.setAttribute("aria-label", c.title || `Chapter ${i}`);
-    b.innerHTML = `<span>${c.year ? c.year + " · " : ""}${c.title}</span>`;
+    const label = [c.year, c.title].filter(Boolean).join(" · ") || `Chapter ${i}`;
+    b.setAttribute("aria-label", label);
+    b.innerHTML = '<span class="lbl"></span><i class="dot"></i>';
+    b.querySelector(".lbl").textContent = label;
     b.addEventListener("click", () => c.el.scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "center" }));
     rail.appendChild(b);
   });
@@ -268,18 +393,17 @@
   /* ---------- boot ---------- */
   map.on("error", (e) => console.warn("Map:", (e && e.error && e.error.message) || e));
   map.on("style.load", () => {
-    if (map.setProjection) map.setProjection({ type: "globe" });
+    if (map.setProjection) { map.setProjection({ type: "globe" }); map.__projection = "globe"; }
   });
   map.on("load", async () => {
-    addSatellite(map);
+    addExtras(map);
     buildMarkers();
     buildLayers();
     const i = initialIndex();
     if (i > 0) steps[i].scrollIntoView({ behavior: "instant", block: "center" });
     ready = true;
     activate(i, true);
-    await maskToponyms(map);
-    map.once("idle", () => setTimeout(() => warmCache().catch((err) => console.warn("Tile warm-up skipped:", err)), 800));
+    await setupPlaceNames(map);
   });
   addEventListener("resize", () => moveCamera(map, chapters[Math.max(current, 0)], 0));
 })();

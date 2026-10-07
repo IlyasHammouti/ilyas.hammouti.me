@@ -61,8 +61,14 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .btn-ghost { background: transparent; color: var(--ink); }
 .btn-ghost:hover { background: var(--ink); color: #fff; }
 
-/* Map */
-#map { position: fixed; inset: 0; z-index: 0; background: #e8ecef; }
+/* Night sky behind the globe (stars drawn by js/stars.js) */
+#stars {
+  position: fixed; inset: 0; z-index: 0; width: 100%; height: 100%;
+  background: radial-gradient(ellipse at 50% 38%, #12295c 0%, #0a1838 42%, #050c22 78%, #02050f 100%);
+}
+
+/* Map: transparent so the sky shows around the globe */
+#map { position: fixed; inset: 0; z-index: 1; background: transparent; }
 .maplibregl-ctrl-attrib { font-size: 10px; }
 
 /* Story */
@@ -155,27 +161,35 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 .video .launch:hover .play { border-left-color: var(--accent); }
 .video iframe { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; border: 0; }
 
-/* Chapter rail */
+/* Chapter rail: every chapter labelled "year · place"; the current one opaque, the others translucent */
 .rail {
-  position: fixed; right: 20px; top: 50%; transform: translateY(-50%);
-  z-index: 50; display: flex; flex-direction: column; gap: 10px;
+  position: fixed; right: 18px; top: 50%; transform: translateY(-50%);
+  z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 5px;
 }
 .rail button {
-  position: relative; width: 12px; height: 12px; padding: 0;
-  border: 1px solid var(--ink); background: var(--paper); border-radius: 50%;
-  cursor: pointer;
-  transition: background 0.25s var(--ease), transform 0.25s var(--ease);
+  display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none;
+  cursor: pointer; opacity: 0.4;
+  transition: opacity 0.3s var(--ease);
 }
-.rail button:hover { background: var(--ink); }
-.rail button.is-active { background: var(--accent); border-color: var(--accent); transform: scale(1.25); }
-.rail button span {
-  position: absolute; right: 22px; top: 50%; transform: translateY(-50%);
-  white-space: nowrap; padding: 3px 7px;
-  font: 500 0.6875rem/1 var(--font-mono); letter-spacing: 0.04em;
-  background: var(--ink); color: #fff;
-  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+.rail button:hover, .rail button:focus-visible { opacity: 0.85; }
+.rail button.is-active { opacity: 1; }
+.rail .lbl {
+  padding: 3px 7px; white-space: nowrap;
+  font: 500 0.6875rem/1.2 var(--font-mono); letter-spacing: 0.04em;
+  background: rgba(246, 245, 241, 0.94); color: var(--ink);
+  border: 1px solid var(--rule);
 }
-.rail button:hover span, .rail button:focus-visible span { opacity: 1; }
+.rail button.is-active .lbl { background: var(--ink); color: #fff; border-color: var(--ink); }
+.rail .dot {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: rgba(246, 245, 241, 0.94); border: 1px solid var(--ink);
+  transition: background 0.3s var(--ease), transform 0.3s var(--ease);
+}
+.rail button.is-active .dot { background: var(--accent); border-color: var(--accent); transform: scale(1.3); }
+@media (max-width: 1199px) {
+  .rail button:not(.is-active) .lbl { display: none; }   /* narrow desktop: only the current label */
+}
+@media (max-height: 640px) { .rail { gap: 3px; } .rail .lbl { padding: 2px 6px; } }
 
 /* Map markers */
 .pin { width: 12px; height: 12px; border-radius: 50%; background: var(--ink); border: 2px solid var(--paper); }

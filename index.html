@@ -29,6 +29,7 @@
     </nav>
   </header>
 
+  <canvas id="stars" aria-hidden="true"></canvas>
   <div id="map" role="img" aria-label="Map following Ilyas Hammouti's academic and professional path"></div>
   <nav id="rail" class="rail" aria-label="Chapters"></nav>
 
@@ -41,15 +42,15 @@
         <h1>Ilyas Hammouti</h1>
         <p class="lead">I turn satellite data into modelled catastrophe losses. MSc student in natural hazards and risk (Dynarisk, Paris 1 Panthéon-Sorbonne), looking for a six-month nat cat internship in Zurich from 11&nbsp;January&nbsp;2027.</p>
         <div class="cta">
-          <a class="btn btn-solid" href="assets/Ilyas_Hammouti_Resume.pdf" download>Download resume</a>
           <a class="btn btn-ghost" href="mailto:ilyas@hammouti.me">Contact me</a>
+          <a class="btn btn-solid" href="assets/Ilyas_Hammouti_Resume.pdf" download>Download resume</a>
         </div>
         <p class="hint">Scroll to follow my path on the map <span aria-hidden="true">↓</span></p>
       </div>
     </section>
 
     <!-- 1 · Montpellier L1 -->
-    <section class="step" id="montpellier" data-title="Montpellier" data-year="2022" data-center="3.87,43.633" data-zoom="9.5" data-pitch="0">
+    <section class="step" id="montpellier" data-title="Montpellier" data-year="2022" data-center="3.87,43.633" data-zoom="15.8" data-pitch="58" data-bearing="-20" data-buildings="true">
       <div class="card">
         <img class="logo" src="assets/logos/paul-valery.png" alt="Université Paul-Valéry Montpellier" style="--h:52px" height="52" loading="lazy" />
         <p class="eyebrow">2022 – 2023 · Université Paul-Valéry, Montpellier</p>
@@ -59,7 +60,7 @@
     </section>
 
     <!-- 2 · Nanterre L2 -->
-    <section class="step" id="nanterre" data-title="Nanterre" data-year="2023" data-center="2.2143,48.9054" data-zoom="10">
+    <section class="step" id="nanterre" data-title="Nanterre" data-year="2023" data-center="2.2143,48.9054" data-zoom="15.8" data-pitch="58" data-bearing="15" data-buildings="true">
       <div class="card">
         <img class="logo" src="assets/logos/nanterre.png" alt="Université Paris Nanterre" style="--h:30px" height="30" loading="lazy" />
         <p class="eyebrow">2023 – 2024 · Université Paris Nanterre, second year</p>
@@ -71,7 +72,7 @@
     </section>
 
     <!-- 3 · Salagou -->
-    <section class="step" id="salagou" data-basemap="satellite" data-title="Salagou" data-year="" data-center="3.3712,43.655" data-zoom="11.2" data-pitch="35">
+    <section class="step" id="salagou" data-title="Salagou" data-year="2023" data-center="3.3712,43.655" data-zoom="11.2" data-pitch="35">
       <div class="card">
         <p class="eyebrow">2023 – 2024 · Lac du Salagou, Hérault</p>
         <h2>Water management and irrigation</h2>
@@ -82,10 +83,10 @@
     </section>
 
     <!-- 4 · Geofit -->
-    <section class="step" id="geofit" data-title="Geofit" data-year="2024" data-center="3.8767,43.6119" data-zoom="12">
+    <section class="step" id="geofit" data-title="Geofit" data-year="2024" data-center="3.9388,43.6606" data-zoom="15.4" data-pitch="55" data-bearing="20" data-buildings="true">
       <div class="card">
         <img class="logo" src="assets/logos/geofit.png" alt="Geofit" style="--h:26px" height="26" loading="lazy" />
-        <p class="eyebrow">Jun – Aug 2024 · Geofit, Montpellier</p>
+        <p class="eyebrow">Jun – Aug 2024 · Geofit, Le Crès (Montpellier)</p>
         <h2>Cartographer</h2>
         <p>Interpreted Pléiades Neo very-high-resolution satellite imagery, digitised building footprints from orthophotos in MicroStation, and quality-checked the team's mapping data.</p>
         <p class="note">National defence context, so no outputs shown.</p>
@@ -93,7 +94,7 @@
     </section>
 
     <!-- 5 · Paris 1 L3 -->
-    <section class="step" id="paris1" data-title="Paris 1" data-year="" data-center="2.3441,48.8463" data-zoom="12.5">
+    <section class="step" id="paris1" data-title="Sorbonne" data-year="2024" data-center="2.3426,48.8447" data-zoom="16.2" data-pitch="60" data-bearing="25" data-buildings="true">
       <div class="card">
         <img class="logo" src="assets/logos/paris1.png" alt="Université Paris 1 Panthéon-Sorbonne" style="--h:40px" height="40" loading="lazy" />
         <p class="eyebrow">2024 – 2025 · Université Paris 1 Panthéon-Sorbonne</p>
@@ -103,7 +104,7 @@
     </section>
 
     <!-- 6 · Yogyakarta -->
-    <section class="step" id="yogyakarta" data-basemap="satellite" data-title="Yogyakarta" data-year="2025" data-center="110.3776,-7.7713" data-zoom="11" data-pitch="30">
+    <section class="step" id="yogyakarta" data-title="Yogyakarta" data-year="2025" data-center="110.3776,-7.7713" data-zoom="11" data-pitch="30">
       <div class="card">
         <img class="logo" src="assets/logos/ugm.png" alt="Universitas Gadjah Mada" style="--h:58px" height="58" loading="lazy" />
         <p class="eyebrow">Feb – Jun 2025 · Universitas Gadjah Mada, Indonesia</p>
@@ -115,7 +116,7 @@
     </section>
 
     <!-- 7 · Dynarisk -->
-    <section class="step" id="dynarisk" data-title="Dynarisk" data-year="" data-center="2.3441,48.8463" data-zoom="11.5">
+    <section class="step" id="dynarisk" data-title="Dynarisk" data-year="2025" data-center="2.3426,48.8447" data-zoom="15.7" data-pitch="60" data-bearing="-35" data-buildings="true">
       <div class="card">
         <img class="logo" src="assets/logos/paris1.png" alt="Université Paris 1 Panthéon-Sorbonne" style="--h:40px" height="40" loading="lazy" />
         <p class="eyebrow">Sept 2025 · Université Paris 1 Panthéon-Sorbonne</p>
@@ -127,7 +128,7 @@
     </section>
 
     <!-- 8 · Sorbonne Junior Conseil -->
-    <section class="step" id="sjc" data-title="Junior Conseil" data-year="" data-center="2.3431,48.8487" data-zoom="16.2" data-pitch="40" data-bearing="-15">
+    <section class="step" id="sjc" data-title="Junior Conseil" data-year="2025" data-center="2.3436,48.8486" data-zoom="16.4" data-pitch="60" data-bearing="-15" data-buildings="true">
       <div class="card">
         <img class="logo" src="assets/logos/sjc.png" alt="Sorbonne Junior Conseil" style="--h:76px" height="76" loading="lazy" />
         <p class="eyebrow">Oct 2025 – Jul 2026 · Sorbonne Junior Conseil, Paris</p>
@@ -137,9 +138,9 @@
     </section>
 
     <!-- 9 · Dempo -->
-    <section class="step" id="dempo" data-basemap="satellite" data-title="Mount Dempo" data-year="2026" data-center="103.13,-4.03" data-zoom="10.5" data-pitch="45" data-bearing="-20">
+    <section class="step" id="dempo" data-basemap="satellite" data-title="Mount Dempo" data-year="2025" data-center="103.13,-4.03" data-zoom="11.2" data-pitch="62" data-bearing="-25" data-terrain="1.6">
       <div class="card">
-        <p class="eyebrow">2026 · First-year thesis · Mount Dempo, Sumatra</p>
+        <p class="eyebrow">2025 – 2026 · First-year thesis · Mount Dempo, Sumatra</p>
         <h2>Geomorphology of a volcano</h2>
         <p>Mapping surface deposits and slope processes from Sentinel-1/2 imagery and the DEMNAS elevation model. A remote study, with no fieldwork. Supervisors: F. Lavigne, A. Faral, Y. Chabot.</p>
         <p class="note">Map layers to come: geomorphological map and megaliths webmap.</p>
@@ -148,9 +149,7 @@
     </section>
 
     <!-- 10 · Fieldwork -->
-    <section class="step" id="fieldwork" data-basemap="satellite" data-title="Fieldwork" data-year=""
-             data-center="4.2,46.4" data-zoom="5.8"
-             data-points='[{"lng":5.9,"lat":46.75,"label":"Jura"},{"lng":3.6,"lat":44.1,"label":"Cévennes"},{"lng":2.55,"lat":48.7,"label":"Yerres"}]'>
+    <section class="step" id="fieldwork" data-title="Fieldwork" data-year="2025" data-center="4.2,46.4" data-zoom="5.8" data-points="">
       <div class="card">
         <p class="eyebrow">Oct 2025 – Sept 2026 · Master's fieldwork</p>
         <h2>Out in the field</h2>
@@ -163,13 +162,11 @@
     </section>
 
     <!-- 11 · Hazard Watch -->
-    <section class="step" id="hazardwatch" data-title="Hazard Watch" data-year=""
-             data-center="40,35" data-zoom="1.6"
-             data-points='[{"lng":11.9,"lat":44.4,"label":"Emilia-Romagna"},{"lng":24.6,"lat":56.9,"label":"Latvia"},{"lng":85.3,"lat":28.1,"label":"Rasuwa, Nepal"}]'>
+    <section class="step" id="hazardwatch" data-title="Hazard Watch" data-year="2026" data-center="40,35" data-zoom="1.6" data-points="">
       <div class="card card-wide">
         <img class="logo" src="assets/logos/hazard-watch.png" alt="Hazard Watch" style="--h:28px" height="28" loading="lazy" />
         <p class="eyebrow">Since August 2026 · Personal project</p>
-        <h2>Hazard Watch</h2>
+        <h2>Nat cat recap &amp; loss estimation</h2>
         <p class="formula">Hazard × Exposure × Vulnerability = Loss</p>
         <p>A catastrophe-loss chain built end to end. Hazard footprints come from Copernicus EMS and Global Flood Monitoring (Sentinel-1/2). Exposure comes from JRC GHSL and LitPop, through CLIMADA (ETH Zurich). Damage comes from EMS grading or published depth-damage curves.</p>
         <p>The Emilia-Romagna (2023) and Latvia (2026) floods calibrated the model. The Rasuwa flood (Nepal) is the first estimate published. Since September 2026 a weekly video digest of the week's hazard events goes out every Monday.</p>
@@ -183,7 +180,7 @@
     </section>
 
     <!-- 12 · Recommendation -->
-    <section class="step" id="reference" data-title="Reference" data-year="" data-center="2.3441,48.8463" data-zoom="11">
+    <section class="step" id="reference" data-title="Reference" data-year="2026" data-center="2.3426,48.8447" data-zoom="13">
       <div class="card card-wide">
         <p class="eyebrow">September 2026 · Letter of recommendation</p>
         <blockquote class="quote">“Rather than simply completing the required exercises, he contributed his own ideas, explored different analytical approaches, and experimented with alternative methods for processing and visualizing data, notably with Google Earth Engine.”</blockquote>
@@ -194,23 +191,23 @@
     </section>
 
     <!-- 13 · Swiss Copilot -->
-    <section class="step" id="swisscopilot" data-title="Switzerland" data-year="2027" data-center="8.2275,46.8182" data-zoom="6.8">
+    <section class="step" id="swisscopilot" data-title="Switzerland" data-year="2026" data-center="8.2275,46.8182" data-zoom="6.8">
       <div class="card">
-        <p class="eyebrow">Planned launch · Switzerland</p>
+        <p class="eyebrow">Since March 2026 · Planned launch · Switzerland</p>
         <h2>Swiss Copilot</h2>
         <p>A tool to organise my own move to Switzerland: budget estimation and municipality recommendation. Launch planned, B2C first, then B2B.</p>
       </div>
     </section>
 
     <!-- 14 · Zurich -->
-    <section class="step" id="zurich" data-title="Zurich" data-year="" data-center="8.5417,47.3769" data-zoom="12" data-pitch="50" data-bearing="15">
+    <section class="step" id="zurich" data-title="Zurich" data-year="2027" data-center="8.5417,47.3769" data-zoom="15.6" data-pitch="60" data-bearing="20" data-buildings="true">
       <div class="card card-wide">
         <p class="eyebrow">From 11 January 2027 · Zurich</p>
         <h2>Next: Zurich</h2>
         <p>A six-month internship in nat cat, applying geospatial data processing, hazard and exposure mapping and clear reporting. The first step of a career as a geospatial specialist in natural hazard risk.</p>
         <div class="cta">
-          <a class="btn btn-solid" href="assets/Ilyas_Hammouti_Resume.pdf" download>Download resume</a>
           <a class="btn btn-ghost" href="mailto:ilyas@hammouti.me">Contact me</a>
+          <a class="btn btn-solid" href="assets/Ilyas_Hammouti_Resume.pdf" download>Download resume</a>
         </div>
         <ul class="links inline">
           <li><a href="https://www.linkedin.com/in/ilyas-hammouti/" target="_blank" rel="noopener">LinkedIn</a></li>
@@ -226,6 +223,7 @@
   <footer class="foot">© 2026 Ilyas Hammouti · ilyas@hammouti.me</footer>
 
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js" integrity="sha384-5+cfbwT0iiub6VsQAdn6yz16nr6sDiQoHx6tm4O8OVYXHYOxcffFmCJBL0dgdvGp" crossorigin="anonymous"></script>
+  <script src="js/stars.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

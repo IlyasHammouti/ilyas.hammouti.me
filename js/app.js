@@ -20,6 +20,7 @@
   const FOREIGN_SHARE = 0.5;      // share of the biggest foreign place names kept in view
   const WARM_AHEAD = 3;           // chapters pre-loaded ahead of the one being read
 
+
   const steps = [...document.querySelectorAll(".step")];
   const rail = document.getElementById("rail");
 
@@ -84,7 +85,7 @@
     const before = firstSymbolId(m);
     m.addSource("sat", { type: "raster", tiles: [SAT_TILES], tileSize: 256, maxzoom: 13, attribution: SAT_ATTRIBUTION });
     m.addLayer({
-      id: "sat", type: "raster", source: "sat",
+      id: "sat", type: "raster", source: "sat", layout: { visibility: "none" },
       paint: { "raster-opacity": 0, "raster-opacity-transition": { duration: REDUCED ? 0 : 900, delay: 0 } },
     }, before);
 
@@ -105,17 +106,61 @@
   // Over imagery only the larger place names stay, small ones just add noise.
   const FINE_LABELS = ["label_village", "label_other", "label_town", "highway-name-minor", "highway-name-path", "highway-shield-non-us"];
 
-  function applyChapter(m, c) {
-    if (!m.getLayer("sat")) return;
-    const projection = c.terrain ? "mercator" : "globe";
-    if (m.__projection !== projection && m.setProjection) {
-      m.setProjection({ type: projection });
-      m.__projection = projection;
+  // Imagery is only switched on where a chapter asks for it: an opacity-0 raster layer would still
+  // download tiles at every stop. Fading out first, then removing the layer from the render.
+  function setImagery(m, on) {
+    clearTimeout(m.__imageryTimer);
+    if (on) {
+      m.setLayoutProperty("sat", "visibility", "visible");
+      m.setPaintProperty("sat", "raster-opacity", 1);
+      return;
     }
-    m.setPaintProperty("sat", "raster-opacity", c.satellite ? 1 : 0);
-    FINE_LABELS.forEach((id) => m.getLayer(id) && m.setLayoutProperty(id, "visibility", c.satellite ? "none" : "visible"));
-    m.setLayoutProperty("hillshade", "visibility", c.terrain ? "visible" : "none");
-    m.setTerrain(c.terrain ? { source: "dem", exaggeration: c.terrain } : null);
+    m.setPaintProperty("sat", "raster-opacity", 0);
+    m.__imageryTimer = setTimeout(() => m.getLayer("sat") && m.setLayoutProperty("sat", "visibility", "none"), REDUCED ? 0 : 1000);
+  }
+
+  // Place names over imagery: plain white, no outline. Original paints are remembered to restore them.
+  const textPaint = new WeakMap();
+  function setLabelStyle(m, onImagery) {
+    if (!textPaint.has(m)) {
+      const saved = {};
+      m.getStyle().layers.forEach((l) => {
+        if (l.type === "symbol" && l.layout && l.layout["text-field"]) {
+          saved[l.id] = ["text-color", "text-halo-width", "text-halo-blur"].map((k) => m.getPaintProperty(l.id, k));
+        }
+      });
+      textPaint.set(m, saved);
+    }
+    const props = ["text-color", "text-halo-width", "text-halo-blur"];
+    Object.entries(textPaint.get(m)).forEach(([id, original]) => {
+      if (!m.getLayer(id)) return;
+      const values = onImagery ? ["#ffffff", 0, 0] : original;
+      props.forEach((k, i) => m.setPaintProperty(id, k, values[i]));
+    });
+  }
+
+  // Relief only works on a flat projection, so it is switched on after / off before the projection.
+  function applyChapter(m, c, part = "all") {
+    if (!m.getLayer("sat")) return;
+    const projection = () => {
+      const want = c.terrain ? "mercator" : "globe";
+      if (m.__projection !== want && m.setProjection) { m.setProjection({ type: want }); m.__projection = want; }
+    };
+    const terrain = () => {
+      m.setLayoutProperty("hillshade", "visibility", c.terrain ? "visible" : "none");
+      m.setTerrain(c.terrain ? { source: "dem", exaggeration: c.terrain } : null);
+    };
+    const style = () => {
+      setLabelStyle(m, c.satellite);
+      setImagery(m, c.satellite);
+      FINE_LABELS.forEach((id) => m.getLayer(id) && m.setLayoutProperty(id, "visibility", c.satellite ? "none" : "visible"));
+    };
+    if (part === "projection") projection();
+    else if (part === "terrain") terrain();
+    else if (part === "style") style();
+    else if (part === "rest") { terrain(); style(); }
+    else if (c.terrain) { projection(); terrain(); style(); }
+    else { terrain(); projection(); style(); }
   }
 
   /* ---------- place names ---------- */
@@ -315,7 +360,9 @@
     inset.on("load", () => {
       // A clean locator: only country names stay.
       inset.getStyle().layers.forEach((l) => {
-        if (l.type === "symbol" && !COUNTRY_LAYERS.includes(l.id)) inset.setLayoutProperty(l.id, "visibility", "none");
+        if (l.type !== "symbol") return;
+        if (COUNTRY_LAYERS.includes(l.id)) inset.setLayoutProperty(l.id, "text-field", NAME_EN);
+        else inset.setLayoutProperty(l.id, "visibility", "none");
       });
       if (current >= 0) updateInset(chapters[current], true);
     });
@@ -344,7 +391,11 @@
     zoom: start.zoom,
     interactive: false,           // page scroll must never be hijacked by the map
     attributionControl: { compact: true },
+    maxTileCacheSize: 200,
   });
+
+  // Debug handle for measuring (open the page with ?debug).
+  if (new URLSearchParams(location.search).has("debug")) window.__storymap = { map, twin: () => twin };
 
   let current = -1;
   let scrubbing = false; // dragging along the chapter rail: shorter camera moves
@@ -426,7 +477,10 @@
     host.setAttribute("aria-hidden", "true");
     host.style.cssText = `position:fixed;left:0;top:0;width:${innerWidth}px;height:${innerHeight}px;opacity:0;pointer-events:none;z-index:-2`;
     document.body.appendChild(host);
-    const m = new maplibregl.Map({ container: host, style: STYLE_URL, interactive: false, attributionControl: false, fadeDuration: 0 });
+    const m = new maplibregl.Map({
+      container: host, style: STYLE_URL, interactive: false, attributionControl: false,
+      fadeDuration: 0, pixelRatio: 1,
+    });
     m.on("error", () => {}); // best effort: tile hiccups are irrelevant here
     await new Promise((r) => m.once("load", r));
     addExtras(m);
@@ -439,11 +493,14 @@
     m.once("idle", () => { clearTimeout(t); resolve(); });
   });
 
+  // Once the camera has stopped on chapter N, the views of N+1 .. N+WARM_AHEAD are visited by the twin,
+  // so their tiles are in the browser cache. Nothing runs while the main camera is moving.
   function scheduleWarm(from) {
     if (navigator.connection && navigator.connection.saveData) return;
     clearTimeout(warmTimer);
     const token = ++warmToken;
-    warmTimer = setTimeout(async () => {
+    if (twin) twin.stop();
+    const run = async () => {
       try {
         const m = await ensureTwin();
         for (let k = 1; k <= WARM_AHEAD; k++) {
@@ -456,7 +513,12 @@
       } catch (err) {
         console.warn("Tile pre-load skipped:", err);
       }
-    }, 1200);
+    };
+    warmTimer = setTimeout(() => {
+      if (token !== warmToken) return;
+      if (map.isMoving()) map.once("moveend", () => token === warmToken && run());
+      else run();
+    }, 600);
   }
 
   /* ---------- rail ---------- */

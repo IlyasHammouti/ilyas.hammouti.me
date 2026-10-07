@@ -13,6 +13,7 @@
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
   --bar-h: 56px;
+  --inset-reserve: 260px;   /* space taken at the bottom right by the locator map */
   --gutter: clamp(16px, 4vw, 64px);
   --card-w: 440px;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
@@ -45,6 +46,13 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 }
 .brand { font-weight: 600; letter-spacing: -0.01em; text-decoration: none; }
 .bar-actions { display: flex; gap: 8px; }
+
+.nav-link {
+  margin-right: 8px; padding: 9px 4px;
+  font: 500 0.8125rem/1 var(--font-sans); color: var(--ink); text-decoration: none;
+  border-bottom: 1px solid transparent; transition: border-color 0.2s var(--ease);
+}
+.nav-link:hover, .nav-link:focus-visible { border-bottom-color: var(--accent); }
 
 /* Buttons */
 .btn {
@@ -161,11 +169,31 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 .video .launch:hover .play { border-left-color: var(--accent); }
 .video iframe { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; border: 0; }
 
+/* Locator map (bottom right): where the current chapter is */
+.inset {
+  position: fixed; right: 16px; bottom: 44px; width: 330px; height: 186px; z-index: 40;
+  border: 1px solid var(--ink); background: var(--paper);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  opacity: 0; transform: translateY(10px); pointer-events: none;
+  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+}
+.inset.is-visible { opacity: 1; transform: none; }
+.inset::after {
+  content: "Location"; position: absolute; left: -1px; top: -1px;
+  padding: 4px 8px; background: var(--ink); color: #fff;
+  font: 500 0.625rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.inset .maplibregl-canvas { outline: none; }
+.inset-pin { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--ink); }
+
 /* Chapter rail: every chapter labelled "year · place"; the current one opaque, the others translucent */
 .rail {
-  position: fixed; right: 18px; top: 50%; transform: translateY(-50%);
+  position: fixed; right: 18px;
+  top: calc(var(--bar-h) + (100vh - var(--bar-h) - var(--inset-reserve)) / 2); transform: translateY(-50%);
   z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 5px;
+  padding: 6px 0 6px 14px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
 }
+.rail.is-scrubbing { cursor: grabbing; }
 .rail button {
   display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none;
   cursor: pointer; opacity: 0.4;
@@ -220,8 +248,10 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 /* Mobile: card sits in the lower half, map keeps the top half */
 @media (max-width: 899px) {
   .rail { display: none; }
+  .inset { display: none; }
   .bar-actions { gap: 6px; }
   .bar-actions .btn { padding: 8px 10px; font-size: 0.75rem; }
+  .nav-link { margin-right: 2px; font-size: 0.75rem; }
   .btn-contact { display: none; }
   .step { align-items: flex-end; padding-top: calc(var(--bar-h) + 12px); padding-bottom: 20px; }
   .card { padding: 22px 20px 20px; max-height: 62vh; overflow-y: auto; }

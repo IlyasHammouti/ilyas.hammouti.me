@@ -4,7 +4,7 @@
      data-points='[{"lng":..,"lat":..,"label":".."}]'      extra labelled pins
      data-basemap="satellite"                              Sentinel-2 imagery under the labels
      data-terrain="1.6"                                    3D relief (exaggeration) + hillshade
-     data-buildings="true"                                 3D buildings
+     data-country="CH"                                     animated border spotlight on that country (ISO-2)
      data-layers='[{"id":..,"url":..,"type":..}]'          GIS layers, shown only on that chapter */
 (() => {
   const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -37,7 +37,7 @@
       bearing: d.bearing ? Number(d.bearing) : 0,
       satellite: d.basemap === "satellite",
       terrain: d.terrain ? Number(d.terrain) : 0,
-      buildings: d.buildings === "true",
+      country: d.country || "",
       points: d.points ? JSON.parse(d.points) : [],
       layers: d.layers ? JSON.parse(d.layers) : [],
       index: i,
@@ -70,7 +70,7 @@
     return i > 0 ? i : 0;
   };
 
-  /* ---------- optional basemap layers: satellite, relief, 3D buildings ---------- */
+  /* ---------- optional basemap layers: satellite imagery, relief ---------- */
   const firstSymbolId = (m) => {
     const l = m.getStyle().layers.find((x) => x.type === "symbol");
     return l && l.id;
@@ -89,19 +89,11 @@
     m.addSource("dem-shade", demSource);                                   // hillshade (separate source for quality)
     m.addLayer({
       id: "hillshade", type: "hillshade", source: "dem-shade", layout: { visibility: "none" },
-      paint: { "hillshade-exaggeration": 0.45, "hillshade-shadow-color": "#05080c", "hillshade-highlight-color": "#ffffff" },
-    }, before);
-
-    m.addLayer({
-      id: "buildings-3d", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building",
-      minzoom: 13, layout: { visibility: "none" },
       paint: {
-        "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 6],
-          0, "#e6e1d6", 40, "#d3cdc0", 120, "#bdb5a5"],
-        "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6],
-        "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-        "fill-extrusion-opacity": 0.92,
-        "fill-extrusion-vertical-gradient": true,
+        "hillshade-exaggeration": 0.55,
+        "hillshade-shadow-color": "#000000",
+        "hillshade-highlight-color": "rgba(255,255,255,0)",   // shadows only: acts like a multiply over the imagery
+        "hillshade-accent-color": "rgba(0,0,0,0)",
       },
     }, before);
   }
@@ -119,7 +111,6 @@
     m.setPaintProperty("sat", "raster-opacity", c.satellite ? 1 : 0);
     FINE_LABELS.forEach((id) => m.getLayer(id) && m.setLayoutProperty(id, "visibility", c.satellite ? "none" : "visible"));
     m.setLayoutProperty("hillshade", "visibility", c.terrain ? "visible" : "none");
-    m.setLayoutProperty("buildings-3d", "visibility", c.buildings ? "visible" : "none");
     m.setTerrain(c.terrain ? { source: "dem", exaggeration: c.terrain } : null);
   }
 
@@ -144,6 +135,7 @@
     ? polyHas(pt, f.geometry.coordinates)
     : f.geometry.coordinates.some((p) => polyHas(pt, p)));
 
+  let world = null;      // simplified world countries (assets/geo/countries.json)
   const original = {};   // layer id -> filter before masking
   const mask = { polys: null, iso: [], foreignCity: 3, foreignCountry: 1 };
 
@@ -205,7 +197,6 @@
     });
     [...PLACE_LAYERS, ...COUNTRY_LAYERS].forEach((id) => { if (m.getLayer(id)) original[id] = m.getFilter(id); });
 
-    let world;
     try {
       world = await (await fetch("assets/geo/countries.json")).json();
     } catch (err) {
@@ -217,6 +208,105 @@
     mask.iso = cv.map((f) => f.properties.iso2);
     applyMask(m);
     m.on("idle", () => updateForeignThresholds(m));
+    if (current >= 0) spotlight(chapters[current]);
+  }
+
+
+  /* ---------- country spotlight: the border draws itself, the rest of the world dims ---------- */
+  const WORLD_RECT = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
+  const spot = { raf: 0, country: "" };
+
+  function addSpot(m) {
+    const empty = { type: "FeatureCollection", features: [] };
+    const before = firstSymbolId(m);
+    m.addSource("spot-dim", { type: "geojson", data: empty });
+    m.addSource("spot-line", { type: "geojson", data: empty, lineMetrics: true });
+    m.addLayer({
+      id: "spot-dim", type: "fill", source: "spot-dim",
+      paint: { "fill-color": "#030a1c", "fill-opacity": 0, "fill-opacity-transition": { duration: 1000, delay: 0 } },
+    }, before);
+    m.addLayer({
+      id: "spot-line", type: "line", source: "spot-line",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": "#c4301c", "line-width": 3, "line-opacity": 0, "line-opacity-transition": { duration: 400, delay: 0 } },
+    }, before);
+  }
+
+  function spotlight(c) {
+    if (!map.getSource("spot-dim")) return;
+    cancelAnimationFrame(spot.raf);
+    const feature = c.country && world && world.features.find((f) => f.properties.iso2 === c.country);
+    if (!feature) {
+      map.setPaintProperty("spot-dim", "fill-opacity", 0);
+      map.setPaintProperty("spot-line", "line-opacity", 0);
+      spot.country = "";
+      return;
+    }
+    const polys = feature.geometry.type === "Polygon" ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+    if (spot.country !== c.country) {
+      map.getSource("spot-dim").setData({
+        type: "Feature", properties: {},
+        geometry: { type: "Polygon", coordinates: [WORLD_RECT, ...polys.map((p) => p[0])] },
+      });
+      map.getSource("spot-line").setData({
+        type: "FeatureCollection",
+        features: polys.map((p) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: p[0] } })),
+      });
+      spot.country = c.country;
+    }
+    map.setPaintProperty("spot-dim", "fill-opacity", 0.5);
+    map.setPaintProperty("spot-line", "line-opacity", 1);
+    if (REDUCED) return;
+    // Draw the border once, then let it breathe while the chapter is on screen.
+    const t0 = performance.now();
+    const DRAW_MS = 1800;
+    let trimOk = true;
+    const tick = (now) => {
+      const k = Math.min((now - t0) / DRAW_MS, 1);
+      const eased = 1 - Math.pow(1 - k, 3);
+      if (trimOk) {
+        try { map.setPaintProperty("spot-line", "line-trim-offset", [eased, 1]); } catch (_) { trimOk = false; }
+      }
+      map.setPaintProperty("spot-line", "line-width", 3 + (k === 1 ? Math.sin((now - t0 - DRAW_MS) / 450) * 0.9 : 0));
+      spot.raf = requestAnimationFrame(tick);
+    };
+    try { map.setPaintProperty("spot-line", "line-trim-offset", [0, 1]); } catch (_) { trimOk = false; }
+    spot.raf = requestAnimationFrame(tick);
+  }
+
+  /* ---------- locator inset: a small map of where the chapter is ---------- */
+  const insetEl = document.getElementById("inset");
+  let inset = null;
+  const insetPins = [];
+  const insetZoom = (c) => Math.min(4, Math.max(1.3, c.zoom * 0.35));
+
+  function buildInset() {
+    if (!insetEl || innerWidth < 900) return;
+    inset = new maplibregl.Map({
+      container: insetEl, style: STYLE_URL, center: chapters[0].center, zoom: 1.5,
+      interactive: false, attributionControl: false,
+    });
+    inset.on("error", () => {});
+    inset.on("load", () => {
+      // A clean locator: only country names stay.
+      inset.getStyle().layers.forEach((l) => {
+        if (l.type === "symbol" && !COUNTRY_LAYERS.includes(l.id)) inset.setLayoutProperty(l.id, "visibility", "none");
+      });
+      if (current >= 0) updateInset(chapters[current], true);
+    });
+  }
+
+  function updateInset(c, instant = false) {
+    if (!insetEl || !inset) return;
+    insetEl.classList.toggle("is-visible", c.index > 0);
+    insetPins.splice(0).forEach((m) => m.remove());
+    const spots = c.points.length ? c.points.map((p) => [p.lng, p.lat]) : [c.center];
+    spots.forEach((lngLat) => {
+      const el = document.createElement("div");
+      el.className = "inset-pin";
+      insetPins.push(new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(inset));
+    });
+    inset.flyTo({ center: c.center, zoom: insetZoom(c), duration: REDUCED || instant ? 0 : 1600, essential: true });
   }
 
   /* ---------- main map ---------- */
@@ -231,6 +321,7 @@
   });
 
   let current = -1;
+  let scrubbing = false; // dragging along the chapter rail: shorter camera moves
   let ready = false; // scroll tracking waits for the map, markers and layers
   const markers = []; // { chapterIndex, pin }
 
@@ -238,7 +329,7 @@
     chapters.forEach((c) => {
       const spots = c.points.length
         ? c.points.map((p) => ({ lngLat: [p.lng, p.lat], label: p.label }))
-        : c.index === 0 ? [] : [{ lngLat: c.center }];
+        : c.index === 0 || c.country ? [] : [{ lngLat: c.center }];
       spots.forEach((s) => {
         const pin = document.createElement("div");
         pin.className = "pin";
@@ -289,14 +380,16 @@
     });
     applyChapter(map, c);
     showLayers(index);
-    moveCamera(map, c, REDUCED || instant ? 0 : 2600);
+    spotlight(c);
+    moveCamera(map, c, REDUCED || instant ? 0 : scrubbing ? 700 : 2600);
+    updateInset(c, instant);
     try { history.replaceState(null, "", index === 0 ? location.pathname : "#" + c.id); } catch (_) { /* ignore */ }
     scheduleWarm(index);
   }
 
   /* ---------- rolling pre-load: while chapter N is read, N+1.. load in the background ---------- */
   // A hidden twin map visits the upcoming chapters' views, so their tiles (vector, imagery,
-  // relief, 3D buildings, glyphs) are in the browser cache when the camera gets there.
+  // relief, glyphs) are in the browser cache when the camera gets there.
   let twin = null;
   let warmToken = 0;
   let warmTimer = 0;
@@ -348,9 +441,48 @@
     b.setAttribute("aria-label", label);
     b.innerHTML = '<span class="lbl"></span><i class="dot"></i>';
     b.querySelector(".lbl").textContent = label;
-    b.addEventListener("click", () => c.el.scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "center" }));
+    b.addEventListener("click", (e) => {
+      if (e.detail === 0) goTo(i, false);          // keyboard activation; pointer input is handled below
+    });
     rail.appendChild(b);
   });
+
+  /* Press on the rail and drag up or down to flip through chapters, like a scroller. */
+  function goTo(i, instant) {
+    chapters[i].el.scrollIntoView({ behavior: instant || REDUCED ? "auto" : "smooth", block: "center" });
+  }
+  const railIndexAt = (y) => {
+    let best = 0, dist = Infinity;
+    [...rail.children].forEach((b, i) => {
+      const r = b.getBoundingClientRect();
+      const d = Math.abs(y - (r.top + r.height / 2));
+      if (d < dist) { dist = d; best = i; }
+    });
+    return best;
+  };
+  const drag = { on: false, moved: false, y: 0, index: -1 };
+  rail.addEventListener("pointerdown", (e) => {
+    drag.on = true; drag.moved = false; drag.y = e.clientY;
+    drag.index = railIndexAt(e.clientY);
+    rail.setPointerCapture(e.pointerId);
+  });
+  rail.addEventListener("pointermove", (e) => {
+    if (!drag.on) return;
+    if (!drag.moved && Math.abs(e.clientY - drag.y) < 5) return;
+    drag.moved = true; scrubbing = true;
+    rail.classList.add("is-scrubbing");
+    const i = railIndexAt(e.clientY);
+    if (i !== current) { goTo(i, true); activate(i); }
+  });
+  const endDrag = () => {
+    if (!drag.on) return;
+    drag.on = false;
+    rail.classList.remove("is-scrubbing");
+    if (!drag.moved && drag.index >= 0) goTo(drag.index, false);   // a plain click
+    setTimeout(() => { scrubbing = false; }, 900);
+  };
+  rail.addEventListener("pointerup", endDrag);
+  rail.addEventListener("pointercancel", endDrag);
 
   /* ---------- scroll tracking ---------- */
   const io = new IntersectionObserver((entries) => {
@@ -397,10 +529,12 @@
   });
   map.on("load", async () => {
     addExtras(map);
+    addSpot(map);
     buildMarkers();
     buildLayers();
     const i = initialIndex();
     if (i > 0) steps[i].scrollIntoView({ behavior: "instant", block: "center" });
+    buildInset();
     ready = true;
     activate(i, true);
     await setupPlaceNames(map);

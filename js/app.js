@@ -21,6 +21,12 @@
   const WARM_AHEAD = 3;           // chapters pre-loaded ahead of the one being read
 
 
+  // Phones and small tablets: chapters are a horizontal strip of cards (see css, max-width 899px).
+  // Everything above that width keeps the vertical scroll.
+  const MOBILE_MQ = matchMedia("(max-width: 899px)");
+  const isMobile = () => MOBILE_MQ.matches;
+  MOBILE_MQ.addEventListener("change", () => location.reload());   // rotation / resize across the breakpoint
+
   const steps = [...document.querySelectorAll(".step")];
   const rail = document.getElementById("rail");
 
@@ -58,15 +64,23 @@
   // Keep the focus point clear of the card: reserve the card's real width on desktop,
   // the lower half of the screen on mobile.
   const padding = (c) => {
-    if (innerWidth < 900) return { top: 80, bottom: Math.round(innerHeight * 0.55), left: 20, right: 20 };
+    if (isMobile()) {
+      const card = c.el.querySelector(".card");
+      const h = card ? Math.min(card.offsetHeight, innerHeight * 0.52, 460) : 0;
+      return { top: 70, bottom: Math.round(h + 44), left: 16, right: 16 };
+    }
     const card = c.el.querySelector(".card");
     const reserved = card ? card.getBoundingClientRect().right + 24 : 0;
     const railRoom = innerWidth >= 1200 ? 190 : 80;
     return { top: 80, bottom: 40, left: Math.min(reserved, Math.round(innerWidth * 0.62)), right: railRoom };
   };
 
+  // A phone shows about a quarter of the area a desktop does at the same zoom, so regional and
+  // local views are pulled back to keep each point readable against its city.
+  const zoomFor = (c) => (isMobile() ? c.zoom - (c.zoom >= 4 ? 1.2 : 0.9) : c.zoom);
+
   const moveCamera = (m, c, duration) => m.flyTo({
-    center: c.focus, zoom: c.zoom, pitch: c.pitch, bearing: c.bearing,
+    center: c.focus, zoom: zoomFor(c), pitch: c.pitch, bearing: c.bearing,
     padding: padding(c), duration, essential: true,
   });
 
@@ -351,7 +365,7 @@
   const insetZoom = (c) => Math.min(4, Math.max(1.3, c.zoom * 0.35));
 
   function buildInset() {
-    if (!insetEl || innerWidth < 900) return;
+    if (!insetEl || isMobile()) return;
     inset = new maplibregl.Map({
       container: insetEl, style: STYLE_URL, center: chapters[0].center, zoom: 1.5,
       interactive: false, attributionControl: false,
@@ -392,6 +406,7 @@
     interactive: false,           // page scroll must never be hijacked by the map
     attributionControl: { compact: true },
     maxTileCacheSize: 200,
+    ...(isMobile() ? { pixelRatio: Math.min(window.devicePixelRatio || 1, 2) } : {}),
   });
 
   // Debug handle for measuring (open the page with ?debug).
@@ -405,14 +420,14 @@
   function buildMarkers() {
     chapters.forEach((c) => {
       const spots = c.points.length
-        ? c.points.map((p) => ({ lngLat: [p.lng, p.lat], label: p.label }))
+        ? c.points.map((p) => ({ lngLat: [p.lng, p.lat], label: p.label, side: p.side }))
         : c.index === 0 || c.country ? [] : [{ lngLat: c.center }];
       spots.forEach((s) => {
         const pin = document.createElement("div");
         pin.className = "pin";
         if (s.label) {
           const l = document.createElement("span");
-          l.className = "pin-label";
+          l.className = s.side === "left" ? "pin-label pin-label-left" : "pin-label";
           l.textContent = s.label;
           pin.appendChild(l);
         }
@@ -496,7 +511,7 @@
   // Once the camera has stopped on chapter N, the views of N+1 .. N+WARM_AHEAD are visited by the twin,
   // so their tiles are in the browser cache. Nothing runs while the main camera is moving.
   function scheduleWarm(from) {
-    if (navigator.connection && navigator.connection.saveData) return;
+    if (isMobile() || (navigator.connection && navigator.connection.saveData)) return;
     clearTimeout(warmTimer);
     const token = ++warmToken;
     if (twin) twin.stop();
@@ -521,6 +536,10 @@
     }, 600);
   }
 
+  // Bring a chapter into view: scroll the page (desktop) or the card strip (mobile).
+  const reveal = (i, behavior) => steps[i].scrollIntoView(
+    isMobile() ? { behavior, inline: "center", block: "nearest" } : { behavior, block: "center" });
+
   /* ---------- rail ---------- */
   chapters.forEach((c, i) => {
     const b = document.createElement("button");
@@ -537,7 +556,7 @@
 
   /* Press on the rail and drag up or down to flip through chapters, like a scroller. */
   function goTo(i, instant) {
-    chapters[i].el.scrollIntoView({ behavior: instant || REDUCED ? "auto" : "smooth", block: "center" });
+    reveal(i, instant || REDUCED ? "auto" : "smooth");
   }
   const railIndexAt = (y) => {
     let best = 0, dist = Infinity;
@@ -573,11 +592,43 @@
   rail.addEventListener("pointercancel", endDrag);
 
   /* ---------- scroll tracking ---------- */
-  const io = new IntersectionObserver((entries) => {
-    if (!ready) return;
-    entries.forEach((e) => { if (e.isIntersecting) activate(Number(e.target.dataset.index)); });
-  }, { rootMargin: "-45% 0px -45% 0px" });
-  steps.forEach((s, i) => { s.dataset.index = i; io.observe(s); });
+  steps.forEach((el, i) => { el.dataset.index = i; });
+  if (isMobile()) {
+    // The active chapter is the card nearest the middle of the strip. Waiting for the strip to stop
+    // means a fast swipe across several cards makes one flight, to the card it lands on.
+    const strip = document.getElementById("story");
+    let settle = 0;
+    const nearest = () => {
+      const mid = strip.scrollLeft + strip.clientWidth / 2;
+      let best = 0, dist = Infinity;
+      steps.forEach((el, i) => {
+        const d = Math.abs(el.offsetLeft + el.offsetWidth / 2 - mid);
+        if (d < dist) { dist = d; best = i; }
+      });
+      return best;
+    };
+    strip.addEventListener("scroll", () => {
+      if (!ready) return;
+      clearTimeout(settle);
+      settle = setTimeout(() => activate(nearest()), 90);
+    }, { passive: true });
+  } else {
+    const io = new IntersectionObserver((entries) => {
+      if (!ready) return;
+      entries.forEach((e) => { if (e.isIntersecting) activate(Number(e.target.dataset.index)); });
+    }, { rootMargin: "-45% 0px -45% 0px" });
+    steps.forEach((el) => io.observe(el));
+
+    // Up / Down arrows step from chapter to chapter (instead of nudging the page a few pixels).
+    addEventListener("keydown", (e) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      if (/^(INPUT|TEXTAREA|SELECT|IFRAME)$/.test((e.target && e.target.tagName) || "")) return;
+      const i = Math.min(chapters.length - 1, Math.max(0, current + (e.key === "ArrowDown" ? 1 : -1)));
+      e.preventDefault();
+      if (i !== current) reveal(i, REDUCED ? "auto" : "smooth");
+    });
+  }
 
   /* ---------- portfolio links remember where the reader was ---------- */
   document.addEventListener("click", (e) => {
@@ -598,18 +649,21 @@
     btn.setAttribute("aria-label", `Play video: ${title}`);
     btn.innerHTML = '<span class="play"></span><span class="cap"></span>';
     btn.querySelector(".cap").textContent = title;
-    btn.addEventListener("click", () => {
+    const label = document.createElement("span");      // shown instead of the overlay caption on phones
+    label.className = "vt";
+    label.textContent = title;
+    box.addEventListener("click", () => {
       const f = document.createElement("iframe");
       f.src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&start=${t}`;
       f.title = title;
       f.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
       f.referrerPolicy = "strict-origin-when-cross-origin";
       f.allowFullscreen = true;
+      box.classList.add("is-playing");
       box.replaceChildren(f);
     }, { once: true });
-    box.appendChild(btn);
+    box.append(btn, label);
   });
-
 
   // Fonts and images finishing after the first scroll can shift the page; until the reader
   // takes over, keep a deep-linked chapter (e.g. "Back to the map") centred.
@@ -617,7 +671,7 @@
     let moved = false;
     ["wheel", "touchstart", "keydown", "pointerdown"].forEach((ev) =>
       addEventListener(ev, () => { moved = true; }, { once: true, passive: true }));
-    const realign = () => { if (!moved) steps[i].scrollIntoView({ behavior: "instant", block: "center" }); };
+    const realign = () => { if (!moved) reveal(i, "instant"); };
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(realign);
     if (document.readyState !== "complete") addEventListener("load", realign, { once: true });
     setTimeout(realign, 1500);
@@ -625,7 +679,7 @@
 
   /* ---------- scroll reminder: shown when the reader sits at the top, idle for 2 s ---------- */
   const hint = document.getElementById("scrollhint");
-  if (hint) {
+  if (hint && !isMobile()) {
     let hintTimer = 0;
     const atTop = () => window.scrollY < 8;
     const armHint = () => {
@@ -635,7 +689,7 @@
     };
     ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "scroll"].forEach((ev) =>
       addEventListener(ev, armHint, { passive: true }));
-    hint.addEventListener("click", () => chapters[1].el.scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "center" }));
+    hint.addEventListener("click", () => reveal(1, REDUCED ? "auto" : "smooth"));
     armHint();
   }
 
@@ -650,7 +704,7 @@
     buildMarkers();
     buildLayers();
     const i = initialIndex();
-    if (i > 0) steps[i].scrollIntoView({ behavior: "instant", block: "center" });
+    if (i > 0) reveal(i, "instant");
     buildInset();
     ready = true;
     activate(i, true);

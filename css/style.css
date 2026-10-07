@@ -44,7 +44,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--rule);
 }
-.brand { font-weight: 600; letter-spacing: -0.01em; text-decoration: none; }
+.brand { white-space: nowrap; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; }
 .bar-actions { display: flex; gap: 8px; }
 
 .nav-link {
@@ -56,6 +56,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 
 /* Buttons */
 .btn {
+  white-space: nowrap;
   display: inline-block;
   padding: 9px 16px;
   font: 500 0.8125rem/1 var(--font-sans);
@@ -167,6 +168,8 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 }
 .video .cap { position: absolute; left: 38px; right: 12px; bottom: 9px; z-index: 1; color: #fff; font: 500 0.75rem/1.3 var(--font-sans); text-align: left; }
 .video .launch:hover .play { border-left-color: var(--accent); }
+.video .vt { display: none; }
+.hint-mobile { display: none; }
 .video iframe { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; border: 0; }
 
 /* Scroll reminder: appears after 2 s of stillness at the top of the page */
@@ -263,18 +266,60 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 
 @media (max-width: 1199px) { .card-wide { --card-w: 440px; } }
 
-/* Mobile: card sits in the lower half, map keeps the top half */
+/* Mobile (up to 899px): the chapters are a horizontal strip of cards along the bottom, one card in
+   the middle with its neighbours peeking in from both sides; the map fills the rest of the screen.
+   Swiping the strip changes chapter, a fast swipe can skip several. The page itself does not scroll. */
 @media (max-width: 899px) {
-  .rail { display: none; }
-  .inset { display: none; }
-  .scrollhint { top: calc(var(--bar-h) + 14px); bottom: auto; }   /* the card owns the bottom on phones */
+  :root { --m-card: min(84vw, 440px); }
+  html.story-page, html.story-page body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  .rail, .inset, .scrollhint, .foot { display: none; }
+  .hint-desktop { display: none; }
+  .hint-mobile { display: inline; }
+
   .bar-actions { gap: 6px; }
   .bar-actions .btn { padding: 8px 10px; font-size: 0.75rem; }
   .nav-link { margin-right: 2px; font-size: 0.75rem; }
   .btn-contact { display: none; }
-  .step { align-items: flex-end; padding-top: calc(var(--bar-h) + 12px); padding-bottom: 20px; }
-  .card { padding: 22px 20px 20px; max-height: 62vh; overflow-y: auto; }
-  .step-intro .card { max-height: none; }
+  .long { display: none; }                      /* "← Back to the map" becomes "← map" */
+
+  #story {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex; align-items: flex-end;
+    overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x mandatory; overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    padding: 0 calc((100vw - var(--m-card)) / 2) calc(14px + env(safe-area-inset-bottom, 0px));
+    pointer-events: auto;
+  }
+  #story::-webkit-scrollbar { display: none; }
+  .step { flex: 0 0 var(--m-card); min-height: 0; padding: 0 6px; align-items: flex-end; scroll-snap-align: center; }
+  .card, .card-wide {
+    --card-w: 100%; width: 100%;
+    max-height: 52vh; max-height: min(52dvh, 460px); overflow-y: auto;
+    padding: 18px 18px 16px;
+    opacity: 0.55; transform: scale(0.96); transform-origin: bottom center;
+  }
+  .step.is-active .card { opacity: 1; transform: none; }
+  .pin-label-left { left: auto; right: 16px; }   /* keeps labels near the right edge on screen */
+  .card { scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+  .eyebrow { font-size: 0.625rem; letter-spacing: 0.04em; padding-right: 30px; }
+  .card h1 { font-size: clamp(2rem, 9vw, 2.6rem); }
+  .card h2 { font-size: 1.3rem; }
+  .card p { font-size: 0.9375rem; }
+  .card .lead { font-size: 1rem; }
+  .logo { margin-bottom: 12px; }
+  .links { margin-top: 10px; padding-top: 10px; }
+
+  /* Videos: a small thumbnail beside the title; tapping opens the player in place */
+  .video {
+    display: flex; align-items: center; gap: 12px; aspect-ratio: auto;
+    margin-top: 10px; padding: 6px; background: var(--paper); cursor: pointer;
+  }
+  .video .launch { position: relative; inset: auto; flex: 0 0 96px; width: 96px; height: auto; aspect-ratio: 16 / 9; }
+  .video .cap { display: none; }
+  .video .play { left: 8px; bottom: 8px; border-left-width: 10px; border-top-width: 6px; border-bottom-width: 6px; }
+  .video .vt { display: block; flex: 1; font: 500 0.8125rem/1.3 var(--font-sans); }
+  .video.is-playing { display: block; padding: 0; aspect-ratio: 16 / 9; background: #000; }
 }
 
 @media (prefers-reduced-motion: reduce) {

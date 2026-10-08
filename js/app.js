@@ -18,7 +18,16 @@
   const DEM_ATTRIBUTION = "Terrain: Mapzen / AWS Terrain Tiles (SRTM, ASTER and others)";
 
   const FOREIGN_SHARE = 0.5;      // share of the biggest foreign place names kept in view
-  const WARM_AHEAD = 3;           // chapters pre-loaded ahead of the one being read
+
+  // Saved base map: small light-grey raster tiles (Esri) that cover the vector map whenever the camera moves, so a
+  // flight never passes over a blank map. Their images are preloaded around the chapter being read and kept in the
+  // browser cache. The vector map, with its names, shows through once it is fully drawn.
+  const BASE_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+  const BASE_MAX_ZOOM = 12;
+  const BASE_ATTRIBUTION = "Tiles © Esri";
+  const PRELOAD_TILES = { desktop: 3600, mobile: 600 };   // about 6 KB each: up to ~21 MB on desktop, ~3.5 MB on phones
+  const PRELOAD_PARALLEL = 4;
+  const NOBASE = new URLSearchParams(location.search).has("nobase");   // debug: vector map only
 
 
   // Phones and small tablets: chapters are a horizontal strip of cards (see css, max-width 899px).
@@ -115,6 +124,12 @@
         "hillshade-accent-color": "rgba(0,0,0,0)",
       },
     }, before);
+
+    // The saved base map goes last: above the vector layers and their names, below the pins and the spotlight.
+    if (!NOBASE) {
+      m.addSource("base", { type: "raster", tiles: [BASE_TILES], tileSize: 256, maxzoom: BASE_MAX_ZOOM, attribution: BASE_ATTRIBUTION });
+      m.addLayer({ id: "base", type: "raster", source: "base", paint: { "raster-fade-duration": 0, "raster-opacity": 1 } });
+    }
   }
 
   // Over imagery only the larger place names stay, small ones just add noise.
@@ -281,18 +296,17 @@
 
   function addSpot(m) {
     const empty = { type: "FeatureCollection", features: [] };
-    const before = firstSymbolId(m);
     m.addSource("spot-dim", { type: "geojson", data: empty });
     m.addSource("spot-line", { type: "geojson", data: empty, lineMetrics: true });
     m.addLayer({
       id: "spot-dim", type: "fill", source: "spot-dim",
       paint: { "fill-color": "#030a1c", "fill-opacity": 0, "fill-opacity-transition": { duration: 1000, delay: 0 } },
-    }, before);
+    });
     m.addLayer({
       id: "spot-line", type: "line", source: "spot-line",
       layout: { "line-cap": "round", "line-join": "round" },
       paint: { "line-color": "#c4301c", "line-width": 3, "line-opacity": 0, "line-opacity-transition": { duration: 400, delay: 0 } },
-    }, before);
+    });
   }
 
   // Precise borders live in assets/geo/borders/<ISO2>.json (OpenStreetMap, the same data as the
@@ -421,7 +435,7 @@
   }
 
   // Debug handle for measuring (open the page with ?debug).
-  if (new URLSearchParams(location.search).has("debug")) window.__storymap = { map, twin: () => twin };
+  if (new URLSearchParams(location.search).has("debug")) window.__storymap = { map, preload: () => preload };
 
   let current = -1;
   let scrubbing = false; // dragging along the chapter rail: shorter camera moves
@@ -487,65 +501,107 @@
     moveCamera(map, c, REDUCED || instant ? 0 : scrubbing ? 700 : 2600);
     updateInset(c, instant);
     try { history.replaceState(null, "", index === 0 ? location.pathname : "#" + c.id); } catch (_) { /* ignore */ }
-    scheduleWarm(index);
+    preloadAround(index);
   }
 
-  /* ---------- rolling pre-load: while chapter N is read, N+1.. load in the background ---------- */
-  // A hidden twin map visits the upcoming chapters' views, so their tiles (vector, imagery,
-  // relief, glyphs) are in the browser cache when the camera gets there.
-  let twin = null;
-  let warmToken = 0;
-  let warmTimer = 0;
+  /* ---------- saved base map: preload the images of the flights around the chapter being read ---------- */
+  const mercX = (lng, z) => ((lng + 180) / 360) * 512 * 2 ** z;
+  const mercY = (lat, z) => {
+    const sn = Math.sin((lat * Math.PI) / 180);
+    return (0.5 - Math.log((1 + sn) / (1 - sn)) / (4 * Math.PI)) * 512 * 2 ** z;
+  };
+  const unMerc = (x, y, z) => {
+    const ws = 512 * 2 ** z, n = Math.PI - (2 * Math.PI * y) / ws;
+    return [(x / ws) * 360 - 180, (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))];
+  };
 
-  async function ensureTwin() {
-    if (twin) return twin;
-    const host = document.createElement("div");
-    host.setAttribute("aria-hidden", "true");
-    host.style.cssText = `position:fixed;left:0;top:0;width:${innerWidth}px;height:${innerHeight}px;opacity:0;pointer-events:none;z-index:-2`;
-    document.body.appendChild(host);
-    const m = new maplibregl.Map({
-      container: host, style: STYLE_URL, interactive: false, attributionControl: false,
-      fadeDuration: 0, pixelRatio: 1,
-    });
-    m.on("error", () => {}); // best effort: tile hiccups are irrelevant here
-    await new Promise((r) => m.once("load", r));
-    addExtras(m);
-    twin = m;
-    return m;
-  }
-
-  const settle = (m) => new Promise((resolve) => {
-    const t = setTimeout(resolve, 7000);
-    m.once("idle", () => { clearTimeout(t); resolve(); });
-  });
-
-  // Once the camera has stopped on chapter N, the views of N+1 .. N+WARM_AHEAD are visited by the twin,
-  // so their tiles are in the browser cache. Nothing runs while the main camera is moving.
-  function scheduleWarm(from) {
-    if (isMobile() || (navigator.connection && navigator.connection.saveData)) return;
-    if (new URLSearchParams(location.search).has("nowarm")) return;   // measurements: no background pre-load
-    clearTimeout(warmTimer);
-    const token = ++warmToken;
-    if (twin) twin.stop();
-    const run = async () => {
-      try {
-        const m = await ensureTwin();
-        for (let k = 1; k <= WARM_AHEAD; k++) {
-          const c = chapters[from + k];
-          if (!c || token !== warmToken) return;
-          applyChapter(m, c);
-          moveCamera(m, c, 0);
-          await settle(m);
-        }
-      } catch (err) {
-        console.warn("Tile pre-load skipped:", err);
-      }
+  // Camera positions along MapLibre's flyTo curve (van Wijk), to know which tiles a flight crosses.
+  function flightSamples(a, b, W, H, n = 40) {
+    const rho = 1.42, rho2 = rho * rho, w0 = Math.max(W, H);
+    const scale = 2 ** (b.zoom - a.zoom), w1 = w0 / scale;
+    const fx = mercX(a.focus[0], a.zoom), fy = mercY(a.focus[1], a.zoom);
+    const dx = mercX(b.focus[0], a.zoom) - fx, dy = mercY(b.focus[1], a.zoom) - fy, u1 = Math.hypot(dx, dy);
+    const out = [];
+    if (u1 < 1e-6) {
+      for (let k = 0; k <= n; k++) out.push({ center: a.focus, zoom: a.zoom + ((b.zoom - a.zoom) * k) / n });
+      return out;
+    }
+    const sinh = (v) => (Math.exp(v) - Math.exp(-v)) / 2, cosh = (v) => (Math.exp(v) + Math.exp(-v)) / 2;
+    const tanh = (v) => sinh(v) / cosh(v);
+    const r = (i) => {
+      const bb = (w1 * w1 - w0 * w0 + (i ? -1 : 1) * rho2 * rho2 * u1 * u1) / (2 * (i ? w1 : w0) * rho2 * u1);
+      return Math.log(Math.sqrt(bb * bb + 1) - bb);
     };
-    warmTimer = setTimeout(() => {
-      if (token !== warmToken) return;
-      if (map.isMoving()) map.once("moveend", () => token === warmToken && run());
-      else run();
-    }, 600);
+    const r0 = r(0), S = (r(1) - r0) / rho;
+    for (let k = 0; k <= n; k++) {
+      const sk = (k / n) * S, sc = cosh(r0 + rho * sk) / cosh(r0);
+      const u = (w0 * ((cosh(r0) * tanh(r0 + rho * sk) - sinh(r0)) / rho2)) / u1;
+      const z = a.zoom + Math.log2(sc);
+      out.push({ center: unMerc((fx + dx * u) * sc, (fy + dy * u) * sc, z), zoom: z });
+    }
+    return out;
+  }
+
+  const tileUrl = (z, x, y) => BASE_TILES.replace("{z}", z).replace("{x}", x).replace("{y}", y);
+
+  // Every base tile one flight between chapters i and i+1 can show, in either direction (generous margin).
+  function tilesForFlight(i) {
+    const box = map.getContainer(), W = box.clientWidth, H = box.clientHeight;
+    const urls = new Set();
+    const a = { focus: chapters[i].focus, zoom: zoomFor(chapters[i]) };
+    const b = { focus: chapters[i + 1].focus, zoom: zoomFor(chapters[i + 1]) };
+    flightSamples(a, b, W, H).forEach(({ center, zoom }) => {
+      const tz = Math.max(0, Math.min(BASE_MAX_ZOOM, Math.floor(zoom + 1)));
+      const n = 2 ** tz;
+      if (zoom <= 3.2) {                                        // a globe view shows the whole world
+        for (let x = 0; x < n; x++) for (let y = 0; y < n; y++) urls.add(tileUrl(tz, x, y));
+        return;
+      }
+      const E = Math.max(W, H) * 0.6, ws = 512 * 2 ** zoom;
+      const cx = mercX(center[0], zoom), cy = mercY(center[1], zoom);
+      const x0 = Math.max(0, Math.floor(((cx - E) / ws) * n)), x1 = Math.min(n - 1, Math.floor(((cx + E) / ws) * n));
+      const y0 = Math.max(0, Math.floor(((cy - E) / ws) * n)), y1 = Math.min(n - 1, Math.floor(((cy + E) / ws) * n));
+      for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) urls.add(tileUrl(tz, x, y));
+    });
+    return [...urls];
+  }
+
+  const preload = { done: new Set(), inflight: new Set(), queue: [] };
+
+  function pumpPreload() {
+    while (preload.inflight.size < PRELOAD_PARALLEL && preload.queue.length) {
+      const url = preload.queue.shift();
+      preload.inflight.add(url);
+      fetch(url, { mode: "cors", credentials: "omit", priority: "low" })
+        .then((r) => (r.ok ? r.arrayBuffer() : null))           // read it fully so the browser stores it
+        .then((ok) => { if (ok) preload.done.add(url); })
+        .catch(() => {})
+        .finally(() => { preload.inflight.delete(url); pumpPreload(); });
+    }
+  }
+
+  // Nearest flights first: the one just taken and the next one, then outwards. Re-ordered at every chapter change.
+  function preloadAround(index) {
+    if (NOBASE || (navigator.connection && navigator.connection.saveData)) return;
+    const budget = isMobile() ? PRELOAD_TILES.mobile : PRELOAD_TILES.desktop;
+    const flights = chapters.length - 1;
+    const order = [];
+    [index - 1, index].forEach((f) => { if (f >= 0 && f < flights) order.push(f); });
+    for (let d = 1; d < chapters.length; d++) {
+      [index + d, index - 1 - d].forEach((f) => { if (f >= 0 && f < flights) order.push(f); });
+    }
+    const urls = [];
+    const seen = new Set();
+    for (const f of order) {
+      for (const url of tilesForFlight(f)) {
+        if (seen.has(url) || preload.done.has(url) || preload.inflight.has(url)) continue;
+        if (preload.done.size + preload.inflight.size + urls.length >= budget) break;
+        seen.add(url);
+        urls.push(url);
+      }
+    }
+    preload.queue = urls;
+    pumpPreload();
   }
 
   // Bring a chapter into view: scroll the page (desktop) or the card strip (mobile).
@@ -704,6 +760,22 @@
     hint.addEventListener("click", () => reveal(1, REDUCED ? "auto" : "smooth"));
     armHint();
   }
+
+  /* ---------- base map visibility ---------- */
+  // Opaque while the camera moves (and until the vector map is fully drawn); then it fades out, revealing the
+  // vector map and its names. A timer guarantees it never stays on if the map never reports idle.
+  let baseTimer = 0;
+  const setBase = (opacity, ms) => {
+    if (!map.getLayer("base")) return;
+    map.setPaintProperty("base", "raster-opacity-transition", { duration: ms, delay: 0 });
+    map.setPaintProperty("base", "raster-opacity", opacity);
+  };
+  map.on("movestart", () => { clearTimeout(baseTimer); setBase(1, 0); });
+  map.on("moveend", () => {
+    clearTimeout(baseTimer);
+    baseTimer = setTimeout(() => { if (!map.isMoving()) setBase(0, 700); }, 6000);
+  });
+  map.on("idle", () => { if (!map.isMoving()) { clearTimeout(baseTimer); setBase(0, 700); } });
 
   /* ---------- boot ---------- */
   map.on("error", (e) => console.warn("Map:", (e && e.error && e.error.message) || e));

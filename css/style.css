@@ -226,8 +226,8 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 /* Desktop: a soft shade down the whole right edge, darkest at the edge and fading to nothing, so the chapter
    labels stand out over any map without a visible box */
 @media (min-width: 900px) {
-  html.story-page body::after {
-    content: ""; position: fixed; z-index: 5; top: 0; right: 0; bottom: 0; width: 360px; pointer-events: none;
+  html.story-page #map::after {      /* inside the map: above the tiles, below the map's own controls (sources) */
+    content: ""; position: absolute; z-index: 1; top: 0; right: 0; bottom: 0; width: 360px; pointer-events: none;
     background: linear-gradient(to left, rgba(8, 14, 28, 0.52) 0%, rgba(8, 14, 28, 0.3) 38%, rgba(8, 14, 28, 0.1) 72%, rgba(8, 14, 28, 0) 100%);
   }
 }
@@ -343,7 +343,10 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 
   /* sources: top right, under the header, folded to the "i" button */
   .maplibregl-ctrl-top-right { top: calc(var(--bar-h) + 4px); right: 2px; }
-  .maplibregl-ctrl-attrib.maplibregl-compact-show { max-width: 78vw; }
+  .maplibregl-ctrl-attrib.maplibregl-compact-show { max-width: calc(100vw - 8px); }
+  .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-inner { white-space: nowrap; font-size: min(10px, calc((100vw - 64px) / 37)); }
+  .long-attrib .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-inner { white-space: normal; font-size: 9px; }   /* imagery adds long credits */
+  html:not(.attrib-ready) .maplibregl-ctrl-attrib-inner { display: none; }   /* never shown open before the script has folded it */
 
   #story {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
@@ -378,7 +381,7 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
   .card p { margin-bottom: 8px; font-size: 0.8125rem; line-height: 1.5; }
   .card .lead { font-size: 0.875rem; }
   .note { font-size: 0.6875rem; }
-  .hint { margin-top: 12px !important; font-size: 0.625rem; line-height: 1.4; }
+  .card p.hint { margin-top: 12px !important; font-size: min(11px, 2.9vw); line-height: 1.4; letter-spacing: 0.03em; white-space: nowrap; }   /* one line at any phone width */
   .logo { height: calc(var(--h, 32px) * 0.72); margin-bottom: 10px; }
   .formula { margin: 2px 0 10px !important; padding: 7px 9px; font-size: 0.6875rem; overflow-wrap: anywhere; }
   .links { margin-top: 8px; padding-top: 8px; font-size: 0.75rem; }

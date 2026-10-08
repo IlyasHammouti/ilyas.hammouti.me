@@ -282,6 +282,7 @@
   }
 
   function applyChapter(m, c) {
+    document.documentElement.classList.toggle("long-attrib", c.satellite);   // imagery adds long credits (phones)
     setLabelStyle(m, c.satellite);
     setImagery(m, c.satellite);
   }
@@ -1020,8 +1021,9 @@
         const el = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
         if (el) { el.classList.remove("maplibregl-compact-show"); el.removeAttribute("open"); }
       };
+      fold();                                         // the control exists already: closed before the first paint
+      document.documentElement.classList.add("attrib-ready");
       map.on("load", fold);
-      map.on("idle", fold);
     }
 
     if (insetEl && !isMobile() && world && window.createLocator) locator = window.createLocator(insetEl, world);

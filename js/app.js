@@ -116,6 +116,16 @@
     padding: padding(c), duration, essential: true,
   });
 
+  // A hop between two chapters in the same area (a few tens of km, both zoomed in on a town): the detailed map
+  // can stay on screen all along, there is no blank ground to hide.
+  const NEAR_KM = 60, NEAR_MIN_ZOOM = 9;
+  const isNearFlight = (a, b) => {
+    if (!a || !b || zoomFor(a) < NEAR_MIN_ZOOM || zoomFor(b) < NEAR_MIN_ZOOM) return false;
+    const rad = Math.PI / 180, dLat = (b.focus[1] - a.focus[1]) * rad, dLng = (b.focus[0] - a.focus[0]) * rad;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.focus[1] * rad) * Math.cos(b.focus[1] * rad) * Math.sin(dLng / 2) ** 2;
+    return 2 * 6371 * Math.asin(Math.sqrt(h)) < NEAR_KM;
+  };
+
   // Opening shot: the planet comes closer and turns to the position of the current chapter. An ease (not the
   // flight curve) keeps the approach steady: one direction in, one direction round.
   const introCamera = (m, c, duration) => m.easeTo({
@@ -430,6 +440,7 @@
   let scrubbing = false; // dragging along the chapter rail: shorter camera moves
   let ready = false; // scroll tracking waits for the map, markers and layers
   let motion = null; // set by watchMotion: { scheduleReveal }
+  let nearFlight = false; // short hop within one area: the detailed map stays on screen throughout
   const markers = []; // { chapterIndex, pin, marker, on }
 
   // Pins are only attached to the map from their chapter on: each attached marker is repositioned every frame.
@@ -459,6 +470,7 @@
 
   function activate(index, instant = false, intro = false) {
     if (!ready || index === current) return;
+    const previous = chapters[current];
     current = index;
     const c = chapters[index];
     steps.forEach((s, i) => s.classList.toggle("is-active", i === index));
@@ -476,9 +488,10 @@
     showLayers(index);
     spotlight(c);
     warmUp([c]);
+    nearFlight = !intro && !REDUCED && isNearFlight(previous, chapters[index]);
     const fly = () => {
       if (intro && flightMs) introCamera(map, c, flightMs); else moveCamera(map, c, flightMs);
-      if (motion) motion.scheduleReveal(flightMs);      // after the move starts: starting it ends any previous one
+      if (motion && !nearFlight) motion.scheduleReveal(flightMs);      // after the move starts: starting it ends any previous one
     };
     if (map.__terrain && !c.terrain) {
       if (flightMs > 0) leaveRelief(fly);
@@ -946,12 +959,13 @@
     map.on("movestart", () => {
       clearTimeout(baseTimer);
       map.off("render", revealWhenLoaded);
+      sky(false);
+      if (nearFlight) return;                          // short hop: the detailed map stays on
       setBase(1, 0);
       if (!NOBASE) vectorRest(true);
-      sky(false);
     });
     // A reload (label colours switching over imagery, for instance) wakes the vector map up: rest again.
-    map.on("move", () => { if (!NOBASE && !revealing && warm.tm && !warm.tm._paused && map.isMoving()) vectorRest(true); });
+    map.on("move", () => { if (!NOBASE && !nearFlight && !revealing && warm.tm && !warm.tm._paused && map.isMoving()) vectorRest(true); });
     map.on("moveend", () => {
       stopReveal();
       clearTimeout(baseTimer);

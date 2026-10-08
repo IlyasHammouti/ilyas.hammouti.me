@@ -918,10 +918,10 @@
       if (!tm) return;
       try { if (on) tm.pause(); else tm.resume(); } catch (_) { /* keep loading normally */ }
     };
-    // The detail (vectors, names, imagery) fades in over the last second of a flight, ending as the camera lands.
-    // The vector map wakes up at the start of that second; the fade starts once its tiles are in (at the latest
+    // The detail (vectors, names, imagery) fades in over the last two seconds of a flight, ending as the camera lands.
+    // The vector map wakes up at the start of that period; the fade starts once its tiles are in (at the latest
     // 300 ms before landing).
-    const REVEAL_LEAD_MS = 1000, REVEAL_MIN_MS = 300;
+    const REVEAL_LEAD_MS = 2000, REVEAL_MIN_MS = 300;
     let revealTimer = 0, revealPoll = 0, revealing = false, deadline = 0;
     const earlyReveal = () => {
       if (!map.isMoving()) { stopReveal(); return; }

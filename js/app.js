@@ -42,6 +42,8 @@
   const BASE_REVEAL_MS = 220;
   const PRELOAD_TILES = { desktop: 3600, mobile: 600 };   // about 6 KB each: up to ~21 MB on desktop, ~3.5 MB on phones
   const PRELOAD_PARALLEL = 4;
+  const INTRO_MS = 4200;                      // the planet turns and comes closer when the page opens
+  const INTRO_ZOOM = 0.35, INTRO_TURN = 100;  // starting height, and degrees of longitude to turn through
   const FLIGHT_MS = 3800, SCRUB_MS = 700;   // same path as before, flown more slowly so the reader can follow it
   const params = new URLSearchParams(location.search);
   const NOBASE = params.has("nobase");             // debug: vector map only
@@ -112,6 +114,13 @@
   const moveCamera = (m, c, duration) => m.flyTo({
     center: c.focus, zoom: zoomFor(c), pitch: c.pitch, bearing: c.bearing,
     padding: padding(c), duration, essential: true,
+  });
+
+  // Opening shot: the planet comes closer and turns to the position of the current chapter. An ease (not the
+  // flight curve) keeps the approach steady: one direction in, one direction round.
+  const introCamera = (m, c, duration) => m.easeTo({
+    center: c.focus, zoom: zoomFor(c), pitch: c.pitch, bearing: c.bearing,
+    padding: padding(c), duration, essential: true, easing: (t) => 1 - Math.pow(1 - t, 3),
   });
 
   const initialIndex = () => {
@@ -420,6 +429,7 @@
   let current = -1;
   let scrubbing = false; // dragging along the chapter rail: shorter camera moves
   let ready = false; // scroll tracking waits for the map, markers and layers
+  let motion = null; // set by watchMotion: { scheduleReveal }
   const markers = []; // { chapterIndex, pin, marker, on }
 
   // Pins are only attached to the map from their chapter on: each attached marker is repositioned every frame.
@@ -447,7 +457,7 @@
     if (map.getLayer(l.id) && map.getLayoutProperty(l.id, "visibility") !== want) map.setLayoutProperty(l.id, "visibility", want);
   }));
 
-  function activate(index, instant = false) {
+  function activate(index, instant = false, intro = false) {
     if (!ready || index === current) return;
     current = index;
     const c = chapters[index];
@@ -461,12 +471,15 @@
       if (on !== m.on) { if (on) m.marker.addTo(map); else m.marker.remove(); m.on = on; }
       m.pin.classList.toggle("is-current", m.chapterIndex === index);
     });
-    const flightMs = REDUCED || instant ? 0 : scrubbing ? SCRUB_MS : FLIGHT_MS;
+    const flightMs = REDUCED ? 0 : intro ? INTRO_MS : instant ? 0 : scrubbing ? SCRUB_MS : FLIGHT_MS;
     applyChapter(map, c);
     showLayers(index);
     spotlight(c);
     warmUp([c]);
-    const fly = () => moveCamera(map, c, flightMs);
+    const fly = () => {
+      if (intro && flightMs) introCamera(map, c, flightMs); else moveCamera(map, c, flightMs);
+      if (motion) motion.scheduleReveal(flightMs);      // after the move starts: starting it ends any previous one
+    };
     if (map.__terrain && !c.terrain) {
       if (flightMs > 0) leaveRelief(fly);
       else { ++reliefToken; setRelief(0); fly(); }
@@ -474,7 +487,7 @@
       if (!c.terrain) ++reliefToken;                  // a pending landing on the relief is no longer wanted
       fly();
     }
-    updateInset(c, instant);
+    updateInset(c, instant || intro);
     try { history.replaceState(null, "", index === 0 ? location.pathname : "#" + c.id); } catch (_) { /* ignore */ }
     preloadAround(index);
   }
@@ -892,6 +905,36 @@
       if (!tm) return;
       try { if (on) tm.pause(); else tm.resume(); } catch (_) { /* keep loading normally */ }
     };
+    // The detail (vectors, names, imagery) fades in over the last second of a flight, ending as the camera lands.
+    // The vector map wakes up at the start of that second; the fade starts once its tiles are in (at the latest
+    // 300 ms before landing).
+    const REVEAL_LEAD_MS = 1000, REVEAL_MIN_MS = 300;
+    let revealTimer = 0, revealPoll = 0, revealing = false, deadline = 0;
+    const earlyReveal = () => {
+      if (!map.isMoving()) { stopReveal(); return; }
+      const left = deadline - performance.now();
+      if (!map.areTilesLoaded() && left > REVEAL_MIN_MS) return;
+      clearInterval(revealPoll);
+      setBase(0, Math.max(REVEAL_MIN_MS, left));
+    };
+    function stopReveal() {
+      clearTimeout(revealTimer);
+      clearInterval(revealPoll);
+      revealing = false;
+    }
+    const scheduleReveal = (flightMs) => {
+      stopReveal();
+      if (NOBASE || flightMs < 400) return;
+      const lead = Math.min(REVEAL_LEAD_MS, flightMs * 0.5);
+      deadline = performance.now() + flightMs;
+      revealTimer = setTimeout(() => {
+        revealing = true;
+        vectorRest(false);
+        revealPoll = setInterval(earlyReveal, 50);
+      }, flightMs - lead);
+    };
+    motion = { scheduleReveal };
+
     // The sky can only be seen around the globe: once the globe is wider than the window it can rest.
     const skyVisible = () => {
       const radius = (512 * 2 ** map.getZoom()) / (2 * Math.PI);
@@ -908,8 +951,9 @@
       sky(false);
     });
     // A reload (label colours switching over imagery, for instance) wakes the vector map up: rest again.
-    map.on("move", () => { if (!NOBASE && warm.tm && !warm.tm._paused && map.isMoving()) vectorRest(true); });
+    map.on("move", () => { if (!NOBASE && !revealing && warm.tm && !warm.tm._paused && map.isMoving()) vectorRest(true); });
     map.on("moveend", () => {
+      stopReveal();
       clearTimeout(baseTimer);
       const c = chapters[current];
       if (c && c.terrain && !map.__terrain) raiseRelief(c);
@@ -937,11 +981,12 @@
       if (maplibregl.setWorkerCount) maplibregl.setWorkerCount(Math.min(4, Math.max(2, Math.floor((navigator.hardwareConcurrency || 4) / 2))));
     } catch (_) { /* already started */ }
     const start = chapters[initialIndex()];
+    const intro = !REDUCED;     // the planet starts far away, turned round, and comes to the chapter's position
     map = new maplibregl.Map({
       container: "map",
       style: buildStyle(style, world),
-      center: start.center,
-      zoom: zoomFor(start),
+      center: intro ? [start.focus[0] - INTRO_TURN, Math.max(-20, Math.min(40, start.focus[1] * 0.5 + 8))] : start.center,
+      zoom: intro ? INTRO_ZOOM : zoomFor(start),
       interactive: false,           // page scroll must never be hijacked by the map
       attributionControl: isMobile() ? false : { compact: true },
       maxTileCacheSize: 300,        // revisited chapters keep their tiles
@@ -972,7 +1017,7 @@
       const i = initialIndex();
       if (i > 0) reveal(i, "instant");
       ready = true;
-      activate(i, true);
+      activate(i, true, intro);
       if (i > 0) keepDeepLinkInView(i);
     });
     addEventListener("resize", () => { if (ready) moveCamera(map, chapters[Math.max(current, 0)], 0); });

@@ -63,6 +63,7 @@
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json.success === false) throw new Error(json.message || res.statusText);
+      window.trackEvent?.("contact-form-sent");
       form.reset();
       say("Thank you. I'll get back to you soon.", "ok");
     } catch (err) {

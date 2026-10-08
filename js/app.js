@@ -262,30 +262,77 @@
     });
   }
 
-  // Relief only works on a flat projection, so it is switched on after / off before the projection.
-  // Going to a relief chapter, the relief itself only rises for the last part of the flight (under the base map):
-  // computing it for every view of a long flight is what made those flights stutter.
-  const TERRAIN_AT = 0.6;            // share of the flight flown flat
-  function applyChapter(m, c, flightMs) {
-    clearTimeout(m.__terrainTimer);
-    const projection = () => {
-      const want = c.terrain ? "mercator" : "globe";
-      if (m.__projection !== want) { m.setProjection({ type: want }); m.__projection = want; }
-    };
-    const terrain = (on) => {
-      const value = on ? c.terrain : 0;
-      if ((m.__terrain || 0) === value) return;
-      m.__terrain = value;
-      m.setLayoutProperty("hillshade", "visibility", value ? "visible" : "none");
-      m.setTerrain(value ? { source: "dem", exaggeration: value } : null);
-    };
-    if (c.terrain) {
-      projection();
-      if (flightMs > 0) { terrain(false); m.__terrainTimer = setTimeout(() => terrain(true), flightMs * TERRAIN_AT); }
-      else terrain(true);
-    } else { terrain(false); projection(); }
+  function applyChapter(m, c) {
     setLabelStyle(m, c.satellite);
     setImagery(m, c.satellite);
+  }
+
+  /* ---------- relief: switched on and off behind a still frame ---------- */
+  // Relief is drawn on the globe itself (a switch to a flat projection reloaded every tile and showed the sky
+  // mid-flight). Flights are flown flat. Switching relief on or off moves the camera height by kilometres and leaves
+  // the ground blank until its elevation tiles are read, so it happens behind a still frame of the map: on landing,
+  // the 3D view dissolves in once fully drawn; on take-off, the 3D view dissolves into the flight.
+  const RELIEF_IN_MS = 700, RELIEF_OUT_MS = 700, RELIEF_MAX_WAIT = 5000;
+  const still = document.createElement("canvas");
+  still.className = "still";
+  still.setAttribute("aria-hidden", "true");
+  let reliefToken = 0;
+
+  function setRelief(value) {
+    if ((map.__terrain || 0) === value) return;
+    map.__terrain = value;
+    map.setTerrain(value ? { source: "dem", exaggeration: value } : null);
+    map.setLayoutProperty("hillshade", "visibility", value ? "visible" : "none");
+  }
+
+  // Copy the map's next frame onto the still canvas and show it. The copy is made inside MapLibre's "render"
+  // event, while the WebGL frame is still readable.
+  const holdFrame = () => new Promise((resolve) => {
+    map.once("render", () => {
+      const src = map.getCanvas();
+      if (still.width !== src.width || still.height !== src.height) { still.width = src.width; still.height = src.height; }
+      still.getContext("2d").drawImage(src, 0, 0);
+      still.style.transition = "none";
+      still.style.opacity = "1";
+      resolve();
+    });
+    map.triggerRepaint();
+  });
+  const releaseFrame = (ms) => {
+    still.style.transition = `opacity ${ms}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+    still.style.opacity = "0";
+  };
+
+  // Landing on a relief chapter: hold the landed frame, raise the relief underneath, dissolve once all is drawn.
+  function raiseRelief(c) {
+    const token = ++reliefToken;
+    if (REDUCED) { setRelief(c.terrain); map.jumpTo({ elevation: 0 }); return; }
+    holdFrame().then(() => {
+      if (token !== reliefToken) { releaseFrame(RELIEF_OUT_MS); return; }   // the reader moved on meanwhile
+      setRelief(c.terrain);
+      // MapLibre lifts the view centre onto the summit when relief comes on; keeping it at sea level keeps the camera
+      // exactly where it landed, so the held frame and the 3D view match and the chapter keeps its designed framing.
+      map.jumpTo({ elevation: 0 });
+      let done = false;
+      const release = () => {
+        if (done || token !== reliefToken) return;
+        done = true;
+        releaseFrame(RELIEF_IN_MS);
+      };
+      map.once("idle", release);
+      setTimeout(release, RELIEF_MAX_WAIT);
+    });
+  }
+
+  // Leaving it: hold the 3D frame, drop the relief underneath, then start the flight and dissolve into it.
+  function leaveRelief(start) {
+    const token = ++reliefToken;
+    if (REDUCED) { setRelief(0); start(); return; }
+    holdFrame().then(() => {
+      if (token === reliefToken) setRelief(0);
+      start();
+      releaseFrame(RELIEF_OUT_MS);
+    });
   }
 
   /* ---------- country spotlight: the border draws itself, the rest of the world dims ---------- */
@@ -415,11 +462,18 @@
       m.pin.classList.toggle("is-current", m.chapterIndex === index);
     });
     const flightMs = REDUCED || instant ? 0 : scrubbing ? SCRUB_MS : FLIGHT_MS;
-    applyChapter(map, c, flightMs);
+    applyChapter(map, c);
     showLayers(index);
     spotlight(c);
     warmUp([c]);
-    moveCamera(map, c, flightMs);
+    const fly = () => moveCamera(map, c, flightMs);
+    if (map.__terrain && !c.terrain) {
+      if (flightMs > 0) leaveRelief(fly);
+      else { ++reliefToken; setRelief(0); fly(); }
+    } else {
+      if (!c.terrain) ++reliefToken;                  // a pending landing on the relief is no longer wanted
+      fly();
+    }
     updateInset(c, instant);
     try { history.replaceState(null, "", index === 0 ? location.pathname : "#" + c.id); } catch (_) { /* ignore */ }
     preloadAround(index);
@@ -840,7 +894,6 @@
     };
     // The sky can only be seen around the globe: once the globe is wider than the window it can rest.
     const skyVisible = () => {
-      if (map.__projection !== "globe") return false;
       const radius = (512 * 2 ** map.getZoom()) / (2 * Math.PI);
       const box = map.getContainer();
       return radius < Math.hypot(box.clientWidth, box.clientHeight) * 0.75;
@@ -854,10 +907,12 @@
       if (!NOBASE) vectorRest(true);
       sky(false);
     });
-    // A projection change (to and from the relief chapter) reloads the vector map and wakes it up: rest again.
+    // A reload (label colours switching over imagery, for instance) wakes the vector map up: rest again.
     map.on("move", () => { if (!NOBASE && warm.tm && !warm.tm._paused && map.isMoving()) vectorRest(true); });
     map.on("moveend", () => {
       clearTimeout(baseTimer);
+      const c = chapters[current];
+      if (c && c.terrain && !map.__terrain) raiseRelief(c);
       vectorRest(false);
       map.on("render", revealWhenLoaded);
       baseTimer = setTimeout(() => { if (!map.isMoving()) setBase(0, 700); }, 6000);
@@ -893,8 +948,9 @@
       fadeDuration: 0,              // names and symbols appear with their tiles, no fade-in delay
       pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     });
-    map.__projection = "globe";
     map.on("error", (e) => console.warn("Map:", (e && e.error && e.error.message) || e));
+    map.getContainer().after(still);
+    if (map.setCenterClampedToGround) map.setCenterClampedToGround(false);   // relief never moves the camera (see raiseRelief)
     if (params.has("debug")) window.__storymap = { map, preload: () => preload, warm: () => warm };
 
     // Phones: the sources live at the very top (under the header, away from the cards), folded to the "i".

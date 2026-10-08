@@ -733,16 +733,31 @@
     const SETTLE_RANGE = 180, SETTLE_IDLE = 120;
     const cards = steps.map((s) => s.querySelector(".card")).filter(Boolean);
     const middleOffset = (el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2 - innerHeight / 2; };
-    let settleTimer = 0;
+    let settleTimer = 0, settleFrame = 0, settleY = null;
+    // Own easing (the browser's smooth scroll is short and abrupt): gentle start, long soft landing, 450 to 800 ms.
+    const settleTo = (dy) => {
+      const y0 = scrollY, t0 = performance.now(), dur = Math.min(800, 450 + Math.abs(dy) * 2);
+      const ease = (t) => -(Math.cos(Math.PI * t) - 1) / 2;                 // easeInOutSine
+      const step = (now) => {
+        const t = Math.min(1, (now - t0) / dur);
+        settleY = y0 + dy * ease(t);
+        scrollTo(0, settleY);
+        settleFrame = t < 1 ? requestAnimationFrame(step) : 0;
+        if (t >= 1) settleY = null;
+      };
+      settleFrame = requestAnimationFrame(step);
+    };
+    const stopSettle = () => { cancelAnimationFrame(settleFrame); settleFrame = 0; settleY = null; };
+    ["wheel", "touchstart", "pointerdown", "keydown"].forEach((ev) => addEventListener(ev, stopSettle, { passive: true }));
     addEventListener("scroll", () => {
-      if (REDUCED) return;
+      if (REDUCED || settleY !== null) return;          // our own animation is moving the page
       clearTimeout(settleTimer);
       settleTimer = setTimeout(() => {
         if (!ready || rail.classList.contains("is-scrubbing")) return;
         const best = cards.reduce((a, b) => (Math.abs(middleOffset(b)) < Math.abs(middleOffset(a)) ? b : a));
         const off = middleOffset(best);
         if (best.offsetHeight > innerHeight * 0.88 || Math.abs(off) < 2 || Math.abs(off) > SETTLE_RANGE) return;
-        scrollBy({ top: off, behavior: "smooth" });
+        settleTo(off);
       }, SETTLE_IDLE);
     }, { passive: true });
 

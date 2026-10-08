@@ -42,7 +42,7 @@
   const BASE_REVEAL_MS = 220;
   const PRELOAD_TILES = { desktop: 3600, mobile: 600 };   // about 6 KB each: up to ~21 MB on desktop, ~3.5 MB on phones
   const PRELOAD_PARALLEL = 4;
-  const FLIGHT_MS = 2600, SCRUB_MS = 700;
+  const FLIGHT_MS = 3800, SCRUB_MS = 700;   // same path as before, flown more slowly so the reader can follow it
   const params = new URLSearchParams(location.search);
   const NOBASE = params.has("nobase");             // debug: vector map only
 

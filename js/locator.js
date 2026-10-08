@@ -4,7 +4,7 @@
 (() => {
   const COLORS = { water: "rgb(194,200,202)", land: "rgb(242,243,240)", border: "rgba(120,120,120,0.55)", text: "#2a2f36", halo: "#fff" };
   const FONT = '500 10px Inter, system-ui, sans-serif';
-  const MOVE_MS = 1400;
+  const MOVE_MS = 2000;
   const MIN_LABEL_PX = 34;          // a country gets its name once it is about this wide on screen
 
   const clampLat = (lat) => Math.max(-85, Math.min(85, lat));

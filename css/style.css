@@ -233,7 +233,7 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
 }
 .rail button {
   display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none;
-  cursor: pointer; opacity: 0.5;
+  cursor: pointer; opacity: 0.6;
   transition: opacity 0.3s var(--ease);
 }
 .rail button:hover, .rail button:focus-visible { opacity: 0.85; }

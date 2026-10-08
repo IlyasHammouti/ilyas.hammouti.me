@@ -502,6 +502,7 @@
     }
     updateInset(c, instant || intro);
     try { history.replaceState(null, "", index === 0 ? location.pathname : "#" + c.id); } catch (_) { /* ignore */ }
+    window.trackChapter?.(c.id);
     preloadAround(index);
   }
 

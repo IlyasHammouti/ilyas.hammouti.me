@@ -193,7 +193,7 @@
     }, {
       id: "hillshade", type: "hillshade", source: "dem-shade", layout: { visibility: "none" },
       paint: {
-        "hillshade-exaggeration": 0.55,
+        "hillshade-exaggeration": 0.28,   // half the shading: the imagery shows through
         "hillshade-shadow-color": "#000000",
         "hillshade-highlight-color": "rgba(255,255,255,0)",   // shadows only: acts like a multiply over the imagery
         "hillshade-accent-color": "rgba(0,0,0,0)",

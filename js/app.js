@@ -419,7 +419,8 @@
     zoom: start.zoom,
     interactive: false,           // page scroll must never be hijacked by the map
     attributionControl: isMobile() ? false : { compact: true },
-    maxTileCacheSize: 200,
+    maxTileCacheSize: 300,        // revisited chapters keep their tiles
+    fadeDuration: 0,              // names and symbols appear with their tiles, no fade-in delay
     ...(isMobile() ? { pixelRatio: Math.min(window.devicePixelRatio || 1, 2) } : {}),
   });
 
@@ -580,9 +581,50 @@
     }
   }
 
+  const tileXY = (lng, lat, z) => [Math.floor(mercX(lng, z) / 512), Math.floor(mercY(lat, z) / 512)];
+
+  // Vector tiles of a chapter's arrival view (and the level above), so they come from cache when the camera lands.
+  function vectorTilesFor(c) {
+    const id = Object.keys(map.getStyle().sources).find((k) => map.getStyle().sources[k].type === "vector");
+    const src = id && map.getSource(id);
+    if (!src || !src.tiles || !src.tiles[0]) return [];
+    const box = map.getContainer();
+    const rx = Math.ceil(box.clientWidth / 1024) + 1, ry = Math.ceil(box.clientHeight / 1024) + 1;
+    const out = [];
+    const top = Math.min(src.maxzoom || 14, Math.floor(zoomFor(c)));
+    [[top, rx, ry], [top - 1, 1, 1]].forEach(([z, dx, dy]) => {
+      if (z < 0) return;
+      const n = 2 ** z, [cx, cy] = tileXY(c.focus[0], c.focus[1], z);
+      for (let x = cx - dx; x <= cx + dx; x++) for (let y = Math.max(0, cy - dy); y <= Math.min(n - 1, cy + dy); y++) {
+        out.push(src.tiles[0].replace("{z}", z).replace("{x}", ((x % n) + n) % n).replace("{y}", y));
+      }
+    });
+    return out;
+  }
+
+  // Relief (and its satellite imagery) of every terrain chapter, from the world down to the arrival view.
+  function terrainTilesFor(c) {
+    const box = map.getContainer(), E = Math.max(box.clientWidth, box.clientHeight) * 0.5;
+    const top = Math.min(13, Math.floor(zoomFor(c)) + 1), out = [];
+    for (let z = 5; z <= top; z++) {
+      const n = 2 ** z, r = Math.max(2, Math.ceil((E / 256) / 2 ** (top - z)));
+      const [cx, cy] = [Math.floor(mercX(c.focus[0], z - 1) / 256), Math.floor(mercY(c.focus[1], z - 1) / 256)];
+      for (let x = cx - r; x <= cx + r; x++) for (let y = Math.max(0, cy - r); y <= Math.min(n - 1, cy + r); y++) {
+        const xx = ((x % n) + n) % n;
+        out.push(DEM_TILES.replace("{z}", z).replace("{x}", xx).replace("{y}", y));
+        if (c.satellite) out.push(SAT_TILES.replace("{z}", z).replace("{x}", xx).replace("{y}", y));
+      }
+    }
+    return out;
+  }
+
   // Nearest flights first: the one just taken and the next one, then outwards. Re-ordered at every chapter change.
   function preloadAround(index) {
     if (NOBASE || (navigator.connection && navigator.connection.saveData)) return;
+    const first = [];     // arrival views of the neighbours, then the relief of terrain chapters, go before the base map
+    [index + 1, index - 1].forEach((k) => { if (chapters[k]) first.push(...vectorTilesFor(chapters[k])); });
+    chapters.forEach((c) => { if (c.terrain) first.push(...terrainTilesFor(c)); });
+    const lead = first.filter((u, i) => first.indexOf(u) === i && !preload.done.has(u) && !preload.inflight.has(u));
     const budget = isMobile() ? PRELOAD_TILES.mobile : PRELOAD_TILES.desktop;
     const flights = chapters.length - 1;
     const order = [];
@@ -600,12 +642,12 @@
         urls.push(url);
       }
     }
-    preload.queue = urls;
+    preload.queue = [...lead, ...urls];
     pumpPreload();
   }
 
   // Bring a chapter into view: scroll the page (desktop) or the card strip (mobile).
-  const reveal = (i, behavior) => steps[i].scrollIntoView(
+  const reveal = (i, behavior) => (isMobile() ? steps[i] : steps[i].querySelector(".card") || steps[i]).scrollIntoView(
     isMobile() ? { behavior, inline: "center", block: "nearest" } : { behavior, block: "center" });
 
   /* ---------- rail ---------- */
@@ -687,6 +729,23 @@
     }, { rootMargin: "-45% 0px -45% 0px" });
     steps.forEach((el) => io.observe(el));
 
+    // Resting place: when scrolling stops with a card close to the vertical middle of the window, ease it into place.
+    const SETTLE_RANGE = 180, SETTLE_IDLE = 120;
+    const cards = steps.map((s) => s.querySelector(".card")).filter(Boolean);
+    const middleOffset = (el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2 - innerHeight / 2; };
+    let settleTimer = 0;
+    addEventListener("scroll", () => {
+      if (REDUCED) return;
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        if (!ready || rail.classList.contains("is-scrubbing")) return;
+        const best = cards.reduce((a, b) => (Math.abs(middleOffset(b)) < Math.abs(middleOffset(a)) ? b : a));
+        const off = middleOffset(best);
+        if (best.offsetHeight > innerHeight * 0.88 || Math.abs(off) < 2 || Math.abs(off) > SETTLE_RANGE) return;
+        scrollBy({ top: off, behavior: "smooth" });
+      }, SETTLE_IDLE);
+    }, { passive: true });
+
     // Up / Down arrows step from chapter to chapter (instead of nudging the page a few pixels).
     addEventListener("keydown", (e) => {
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -764,18 +823,31 @@
   /* ---------- base map visibility ---------- */
   // Opaque while the camera moves (and until the vector map is fully drawn); then it fades out, revealing the
   // vector map and its names. A timer guarantees it never stays on if the map never reports idle.
+  // It leaves as soon as every tile of the view is loaded (not at "idle", which waits much longer).
+  const BASE_REVEAL_MS = 220;
   let baseTimer = 0;
   const setBase = (opacity, ms) => {
     if (!map.getLayer("base")) return;
     map.setPaintProperty("base", "raster-opacity-transition", { duration: ms, delay: 0 });
     map.setPaintProperty("base", "raster-opacity", opacity);
   };
-  map.on("movestart", () => { clearTimeout(baseTimer); setBase(1, 0); });
+  const revealWhenLoaded = () => {
+    if (map.isMoving() || !map.areTilesLoaded()) return;
+    map.off("render", revealWhenLoaded);
+    clearTimeout(baseTimer);
+    requestAnimationFrame(() => requestAnimationFrame(() => {   // let the names settle for two frames first
+      if (!map.isMoving()) setBase(0, BASE_REVEAL_MS);
+    }));
+  };
+  map.on("movestart", () => { clearTimeout(baseTimer); map.off("render", revealWhenLoaded); setBase(1, 0); });
   map.on("moveend", () => {
     clearTimeout(baseTimer);
+    map.on("render", revealWhenLoaded);
     baseTimer = setTimeout(() => { if (!map.isMoving()) setBase(0, 700); }, 6000);
+    revealWhenLoaded();
+    map.triggerRepaint();
   });
-  map.on("idle", () => { if (!map.isMoving()) { clearTimeout(baseTimer); setBase(0, 700); } });
+  map.on("idle", () => { if (!map.isMoving()) { clearTimeout(baseTimer); setBase(0, BASE_REVEAL_MS); } });
 
   /* ---------- boot ---------- */
   map.on("error", (e) => console.warn("Map:", (e && e.error && e.error.message) || e));

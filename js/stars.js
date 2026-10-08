@@ -71,18 +71,29 @@
     }
   }
 
+  // The sky only animates while it can be seen and the map is still: during a flight, or when the map
+  // covers the whole window, it holds still so every frame goes to the map (js/app.js calls starfield.run).
+  let running = false, raf = 0;
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     if (now >= nextShot) shoot(now);
     draw(dt);
-    requestAnimationFrame(frame);
+    raf = requestAnimationFrame(frame);
   }
+  window.starfield = {
+    run(on) {
+      if (REDUCED || on === running) return;
+      running = on;
+      cancelAnimationFrame(raf);
+      if (on) raf = requestAnimationFrame((t) => { last = t; nextShot = Math.max(nextShot, t + 1500); frame(t); });
+    },
+  };
 
   addEventListener("resize", resize);
   resize();
   if (!REDUCED) {
     nextShot = performance.now() + rand(2500, 6000);
-    requestAnimationFrame((t) => { last = t; frame(t); });
+    window.starfield.run(true);
   }
 })();

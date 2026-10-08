@@ -7,28 +7,44 @@
      data-basemap="satellite"                              Sentinel-2 imagery under the labels
      data-terrain="1.6"                                    3D relief (exaggeration) + hillshade
      data-country="CH"                                     animated border spotlight on that country (ISO-2)
-     data-layers='[{"id":..,"url":..,"type":..}]'          GIS layers, shown only on that chapter */
+     data-layers='[{"id":..,"url":..,"type":..}]'          GIS layers, shown only on that chapter
+
+   Smoothness rules this file keeps:
+   - The map style is prepared once, before the map exists (names, place-name mask, extra layers). After that no
+     filter or layout property ever changes, because each such change makes MapLibre re-read every tile.
+   - A light raster base map covers the vector map while the camera moves, and leaves as soon as the view is drawn.
+   - The locator is a 2D canvas (js/locator.js), the sky (js/stars.js) holds still during flights,
+     and the card "lock" on desktop is native scroll snapping, run by the browser off the main thread. */
 (() => {
   const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
+  const WORLD_URL = "assets/geo/world.json";       // simplified countries: place-name mask, locator, border fallback
   const SAT_TILES = "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg";
   const SAT_ATTRIBUTION =
     '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless</a> by EOX (contains modified Copernicus Sentinel data 2024)';
   const DEM_TILES = "https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png";
   const DEM_ATTRIBUTION = "Terrain: Mapzen / AWS Terrain Tiles (SRTM, ASTER and others)";
+  // Outside a few countries these tiles hold 30 m SRTM: level 12 already carries all of it, deeper levels are
+  // the same data upsampled, at 4 to 16 times the decoding work.
+  const DEM_MAX_ZOOM = 12;
 
-  const FOREIGN_SHARE = 0.5;      // share of the biggest foreign place names kept in view
+  // Foreign place names (countries that are not in the CV) only show when they rank among the biggest.
+  // Measured on every chapter, these match the earlier "biggest half in view" rule.
+  const FOREIGN_CITY_RANK = 3;
+  const FOREIGN_COUNTRY_RANK = 3;
 
   // Saved base map: small light-grey raster tiles (Esri) that cover the vector map whenever the camera moves, so a
   // flight never passes over a blank map. Their images are preloaded around the chapter being read and kept in the
-  // browser cache. The vector map, with its names, shows through once it is fully drawn.
+  // browser cache. The vector map, with its names, shows through as soon as it is drawn.
   const BASE_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
   const BASE_MAX_ZOOM = 12;
   const BASE_ATTRIBUTION = "Tiles © Esri";
+  const BASE_REVEAL_MS = 220;
   const PRELOAD_TILES = { desktop: 3600, mobile: 600 };   // about 6 KB each: up to ~21 MB on desktop, ~3.5 MB on phones
   const PRELOAD_PARALLEL = 4;
-  const NOBASE = new URLSearchParams(location.search).has("nobase");   // debug: vector map only
-
+  const FLIGHT_MS = 2600, SCRUB_MS = 700;
+  const params = new URLSearchParams(location.search);
+  const NOBASE = params.has("nobase");             // debug: vector map only
 
   // Phones and small tablets: chapters are a horizontal strip of cards (see css, max-width 899px).
   // Everything above that width keeps the vertical scroll.
@@ -69,6 +85,11 @@
     if (card && i > 0) card.dataset.n = String(i).padStart(2, "0");
   });
 
+  // Where a chapter puts its pins (a world view without points has none).
+  const pinsOf = (c) => (c.points.length
+    ? c.points.map((p) => [p.lng, p.lat])
+    : c.index === 0 || c.country || c.zoom < 3 ? [] : [c.center]);
+
   /* ---------- camera ---------- */
   // Keep the focus point clear of the card: reserve the card's real width on desktop,
   // the lower half of the screen on mobile.
@@ -98,108 +119,7 @@
     return i > 0 ? i : 0;
   };
 
-  /* ---------- optional basemap layers: satellite imagery, relief ---------- */
-  const firstSymbolId = (m) => {
-    const l = m.getStyle().layers.find((x) => x.type === "symbol");
-    return l && l.id;
-  };
-
-  function addExtras(m) {
-    const before = firstSymbolId(m);
-    m.addSource("sat", { type: "raster", tiles: [SAT_TILES], tileSize: 256, maxzoom: 13, attribution: SAT_ATTRIBUTION });
-    m.addLayer({
-      id: "sat", type: "raster", source: "sat", layout: { visibility: "none" },
-      paint: { "raster-opacity": 0, "raster-opacity-transition": { duration: REDUCED ? 0 : 900, delay: 0 } },
-    }, before);
-
-    const demSource = { type: "raster-dem", tiles: [DEM_TILES], tileSize: 256, maxzoom: 14, encoding: "terrarium" };
-    m.addSource("dem", { ...demSource, attribution: DEM_ATTRIBUTION });   // 3D terrain
-    m.addSource("dem-shade", demSource);                                   // hillshade (separate source for quality)
-    m.addLayer({
-      id: "hillshade", type: "hillshade", source: "dem-shade", layout: { visibility: "none" },
-      paint: {
-        "hillshade-exaggeration": 0.55,
-        "hillshade-shadow-color": "#000000",
-        "hillshade-highlight-color": "rgba(255,255,255,0)",   // shadows only: acts like a multiply over the imagery
-        "hillshade-accent-color": "rgba(0,0,0,0)",
-      },
-    }, before);
-
-    // The saved base map goes last: above the vector layers and their names, below the pins and the spotlight.
-    if (!NOBASE) {
-      m.addSource("base", { type: "raster", tiles: [BASE_TILES], tileSize: 256, maxzoom: BASE_MAX_ZOOM, attribution: BASE_ATTRIBUTION });
-      m.addLayer({ id: "base", type: "raster", source: "base", paint: { "raster-fade-duration": 0, "raster-opacity": 1 } });
-    }
-  }
-
-  // Over imagery only the larger place names stay, small ones just add noise.
-  const FINE_LABELS = ["label_village", "label_other", "label_town", "highway-name-minor", "highway-name-path", "highway-shield-non-us"];
-
-  // Imagery is only switched on where a chapter asks for it: an opacity-0 raster layer would still
-  // download tiles at every stop. Fading out first, then removing the layer from the render.
-  function setImagery(m, on) {
-    clearTimeout(m.__imageryTimer);
-    if (on) {
-      m.setLayoutProperty("sat", "visibility", "visible");
-      m.setPaintProperty("sat", "raster-opacity", 1);
-      return;
-    }
-    m.setPaintProperty("sat", "raster-opacity", 0);
-    m.__imageryTimer = setTimeout(() => m.getLayer("sat") && m.setLayoutProperty("sat", "visibility", "none"), REDUCED ? 0 : 1000);
-  }
-
-  // Place names over imagery: plain white, no outline. Original paints are remembered to restore them.
-  const textPaint = new WeakMap();
-  function setLabelStyle(m, onImagery) {
-    if (!textPaint.has(m)) {
-      const saved = {};
-      m.getStyle().layers.forEach((l) => {
-        if (l.type === "symbol" && l.layout && l.layout["text-field"]) {
-          saved[l.id] = ["text-color", "text-halo-width", "text-halo-blur"].map((k) => m.getPaintProperty(l.id, k));
-        }
-      });
-      textPaint.set(m, saved);
-    }
-    const props = ["text-color", "text-halo-width", "text-halo-blur"];
-    Object.entries(textPaint.get(m)).forEach(([id, original]) => {
-      if (!m.getLayer(id)) return;
-      const values = onImagery ? ["#ffffff", 0, 0] : original;
-      props.forEach((k, i) => m.setPaintProperty(id, k, values[i]));
-    });
-  }
-
-  // Relief only works on a flat projection, so it is switched on after / off before the projection.
-  function applyChapter(m, c, part = "all") {
-    if (!m.getLayer("sat")) return;
-    const projection = () => {
-      const want = c.terrain ? "mercator" : "globe";
-      if (m.__projection !== want && m.setProjection) { m.setProjection({ type: want }); m.__projection = want; }
-    };
-    const terrain = () => {
-      m.setLayoutProperty("hillshade", "visibility", c.terrain ? "visible" : "none");
-      m.setTerrain(c.terrain ? { source: "dem", exaggeration: c.terrain } : null);
-    };
-    const style = () => {
-      setLabelStyle(m, c.satellite);
-      setImagery(m, c.satellite);
-      FINE_LABELS.forEach((id) => m.getLayer(id) && m.setLayoutProperty(id, "visibility", c.satellite ? "none" : "visible"));
-    };
-    if (part === "projection") projection();
-    else if (part === "terrain") terrain();
-    else if (part === "style") style();
-    else if (part === "rest") { terrain(); style(); }
-    else if (c.terrain) { projection(); terrain(); style(); }
-    else { terrain(); projection(); style(); }
-  }
-
-  /* ---------- place names ---------- */
-  // Countries that appear in the CV are derived from the chapters' coordinates, so a new
-  // chapter in a new country is picked up without touching this file.
-  // Their place names show in full; elsewhere only the biggest ~50% in view are kept.
-  const PLACE_LAYERS = ["label_state", "label_city", "label_city_capital", "label_town", "label_village", "label_other"];
-  const COUNTRY_LAYERS = ["label_country_1", "label_country_2", "label_country_3"];
-  const NAME_EN = ["coalesce", ["get", "name_en"], ["get", "name:latin"], ["get", "name"]];
-
+  /* ---------- countries ---------- */
   const ringHas = (pt, ring) => {
     let inside = false;
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -213,101 +133,164 @@
     ? polyHas(pt, f.geometry.coordinates)
     : f.geometry.coordinates.some((p) => polyHas(pt, p)));
 
-  let world = null;      // simplified world countries (assets/geo/countries.json)
-  const original = {};   // layer id -> filter before masking
-  const mask = { polys: null, iso: [], foreignCity: 3, foreignCountry: 1 };
-
+  // Countries that appear in the CV, derived from the pins, so a new chapter in a new country is picked up
+  // without touching this file.
   function cvCountries(world) {
-    const pts = chapters.flatMap((c) => [...(c.center ? [c.center] : []), ...c.points.map((p) => [p.lng, p.lat])]);
     const found = new Map();
-    pts.forEach((pt) => {
+    chapters.flatMap(pinsOf).forEach((pt) => {
       const f = world.features.find((x) => countryHas(x, pt));
       if (f) found.set(f.properties.a3, f);
     });
     return [...found.values()];
   }
 
-  function applyMask(m) {
-    const inCv = ["within", mask.polys];
-    const rank = ["coalesce", ["get", "rank"], 99];
-    const cityKeep = ["any", inCv, ["<=", rank, mask.foreignCity]];
-    const countryKeep = ["any", ["in", ["get", "iso_a2"], ["literal", mask.iso]], ["<=", rank, mask.foreignCountry]];
-    PLACE_LAYERS.forEach((id) => m.getLayer(id) && m.setFilter(id, ["all", original[id], cityKeep]));
-    COUNTRY_LAYERS.forEach((id) => m.getLayer(id) && m.setFilter(id, ["all", original[id], countryKeep]));
-  }
+  /* ---------- map style, prepared once before the map is created ---------- */
+  const PLACE_LAYERS = ["label_state", "label_city", "label_city_capital", "label_town", "label_village", "label_other"];
+  const COUNTRY_LAYERS = ["label_country_1", "label_country_2", "label_country_3"];
+  const WATER_LABELS = ["water_name_point_label", "water_name_line_label"];
+  const NAME_EN = ["coalesce", ["get", "name_en"], ["get", "name:latin"], ["get", "name"]];
+  // Over imagery only the larger place names stay, small ones just add noise.
+  const FINE_LABELS = ["label_village", "label_other", "label_town", "highway-name-minor", "highway-name-path", "highway-shield-non-us"];
+  const LAYER_DEFAULTS = {
+    fill: { "fill-color": "#c4301c", "fill-opacity": 0.35 },
+    line: { "line-color": "#12161c", "line-width": 1.5 },
+    circle: { "circle-color": "#c4301c", "circle-radius": 5 },
+  };
 
-  // Keep the top FOREIGN_SHARE of the foreign place names currently in view (by importance rank).
-  function updateForeignThresholds(m) {
-    if (!mask.polys) return;
-    const bounds = m.getBounds();
-    const cvFeatures = mask.polys.features;
-    const cities = new Map(), countries = new Map();
-    m.querySourceFeatures("openmaptiles", { sourceLayer: "place" }).forEach((f) => {
-      const p = f.properties, g = f.geometry;
-      if (!p || g.type !== "Point" || !bounds.contains(g.coordinates)) return;
-      const key = p.name_en || p.name;
-      if (p.class === "country") {
-        if (!mask.iso.includes(p.iso_a2)) countries.set(key, p.rank ?? 99);
-      } else if (["city", "town", "state"].includes(p.class)) {
-        if (!cities.has(key) && !cvFeatures.some((cf) => countryHas(cf, g.coordinates))) cities.set(key, p.rank ?? 99);
-      }
+  function buildStyle(style, world) {
+    const layers = style.layers.map((l) => ({ ...l, layout: { ...(l.layout || {}) }, paint: { ...(l.paint || {}) } }));
+    const byId = Object.fromEntries(layers.map((l) => [l.id, l]));
+    const used = new Set(layers.map((l) => l.source).filter(Boolean));
+    const sources = Object.fromEntries(Object.entries(style.sources).filter(([id]) => used.has(id)));
+
+    // International names only (no local script next to them); no ocean or sea names.
+    [...PLACE_LAYERS, ...COUNTRY_LAYERS, ...WATER_LABELS].forEach((id) => { if (byId[id]) byId[id].layout["text-field"] = NAME_EN; });
+    WATER_LABELS.forEach((id) => {
+      const l = byId[id];
+      if (l) l.filter = ["all", l.filter || true, ["!", ["in", ["get", "class"], ["literal", ["ocean", "sea"]]]]];
     });
-    const cut = (set) => {
-      const r = [...set.values()].sort((a, b) => a - b);
-      return r.length ? r[Math.max(0, Math.ceil(r.length * FOREIGN_SHARE) - 1)] : 99;
-    };
-    const next = { city: cut(cities), country: cut(countries) };
-    if (next.city !== mask.foreignCity || next.country !== mask.foreignCountry) {
-      mask.foreignCity = next.city;
-      mask.foreignCountry = next.country;
-      applyMask(m);
+
+    // Place names: in full in the CV countries, only the biggest elsewhere. Fixed once, never updated.
+    if (world) {
+      const cv = cvCountries(world);
+      const rank = ["coalesce", ["get", "rank"], 99];
+      const cityKeep = ["any", ["within", { type: "FeatureCollection", features: cv }], ["<=", rank, FOREIGN_CITY_RANK]];
+      const iso = cv.map((f) => f.properties.iso2);
+      const countryKeep = ["any", ["in", ["get", "iso_a2"], ["literal", iso]], ["<=", rank, FOREIGN_COUNTRY_RANK]];
+      PLACE_LAYERS.forEach((id) => { const l = byId[id]; if (l) l.filter = ["all", l.filter || true, cityKeep]; });
+      COUNTRY_LAYERS.forEach((id) => { const l = byId[id]; if (l) l.filter = ["all", l.filter || true, countryKeep]; });
     }
-  }
 
-  async function setupPlaceNames(m) {
-    // International names only (no local script next to them).
-    [...PLACE_LAYERS, ...COUNTRY_LAYERS, "water_name_point_label", "water_name_line_label"].forEach((id) => {
-      if (m.getLayer(id)) m.setLayoutProperty(id, "text-field", NAME_EN);
+    // Satellite imagery and relief shading sit under the names; both stay hidden until a chapter asks for them.
+    const firstSymbol = layers.findIndex((l) => l.type === "symbol");
+    const demSource = { type: "raster-dem", tiles: [DEM_TILES], tileSize: 256, maxzoom: DEM_MAX_ZOOM, encoding: "terrarium" };
+    sources.sat = { type: "raster", tiles: [SAT_TILES], tileSize: 256, maxzoom: 13, attribution: SAT_ATTRIBUTION };
+    sources.dem = { ...demSource, attribution: DEM_ATTRIBUTION };   // 3D terrain
+    sources["dem-shade"] = demSource;                                 // hillshade (separate source for quality)
+    layers.splice(firstSymbol < 0 ? layers.length : firstSymbol, 0, {
+      id: "sat", type: "raster", source: "sat", layout: { visibility: "none" },
+      paint: { "raster-opacity": 0, "raster-opacity-transition": { duration: REDUCED ? 0 : 900, delay: 0 } },
+    }, {
+      id: "hillshade", type: "hillshade", source: "dem-shade", layout: { visibility: "none" },
+      paint: {
+        "hillshade-exaggeration": 0.55,
+        "hillshade-shadow-color": "#000000",
+        "hillshade-highlight-color": "rgba(255,255,255,0)",   // shadows only: acts like a multiply over the imagery
+        "hillshade-accent-color": "rgba(0,0,0,0)",
+      },
     });
-    ["water_name_point_label", "water_name_line_label"].forEach((id) => {
-      if (!m.getLayer(id)) return;
-      m.setFilter(id, ["all", m.getFilter(id), ["!", ["in", ["get", "class"], ["literal", ["ocean", "sea"]]]]]);
-    });
-    [...PLACE_LAYERS, ...COUNTRY_LAYERS].forEach((id) => { if (m.getLayer(id)) original[id] = m.getFilter(id); });
 
-    try {
-      world = await (await fetch("assets/geo/countries.json")).json();
-    } catch (err) {
-      console.warn("Place-name mask unavailable:", err);
-      return;
+    // The saved base map goes above the vector layers and their names, below the spotlight and chapter layers.
+    if (!NOBASE) {
+      sources.base = { type: "raster", tiles: [BASE_TILES], tileSize: 256, maxzoom: BASE_MAX_ZOOM, attribution: BASE_ATTRIBUTION };
+      layers.push({ id: "base", type: "raster", source: "base", paint: { "raster-fade-duration": 0, "raster-opacity": 1 } });
     }
-    const cv = cvCountries(world);
-    mask.polys = { type: "FeatureCollection", features: cv };
-    mask.iso = cv.map((f) => f.properties.iso2);
-    applyMask(m);
-    m.on("idle", () => updateForeignThresholds(m));
-    if (current >= 0) spotlight(chapters[current]);
-  }
 
-
-  /* ---------- country spotlight: the border draws itself, the rest of the world dims ---------- */
-  const WORLD_RECT = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
-  const spot = { raf: 0, country: "" };
-
-  function addSpot(m) {
+    // Country spotlight: the rest of the world dims, the border draws itself.
     const empty = { type: "FeatureCollection", features: [] };
-    m.addSource("spot-dim", { type: "geojson", data: empty });
-    m.addSource("spot-line", { type: "geojson", data: empty, lineMetrics: true });
-    m.addLayer({
+    sources["spot-dim"] = { type: "geojson", data: empty };
+    sources["spot-line"] = { type: "geojson", data: empty, lineMetrics: true };
+    layers.push({
       id: "spot-dim", type: "fill", source: "spot-dim",
       paint: { "fill-color": "#030a1c", "fill-opacity": 0, "fill-opacity-transition": { duration: 1000, delay: 0 } },
-    });
-    m.addLayer({
+    }, {
       id: "spot-line", type: "line", source: "spot-line",
       layout: { "line-cap": "round", "line-join": "round" },
       paint: { "line-color": "#c4301c", "line-width": 3, "line-opacity": 0, "line-opacity-transition": { duration: 400, delay: 0 } },
     });
+
+    // GIS layers of the chapters, hidden until their chapter.
+    chapters.forEach((c) => c.layers.forEach((l) => {
+      sources[l.id] = { type: "geojson", data: l.url };
+      layers.push({
+        id: l.id, type: l.type || "fill", source: l.id, layout: { visibility: "none" },
+        paint: { ...LAYER_DEFAULTS[l.type || "fill"], ...(l.paint || {}) },
+      });
+    }));
+
+    return { ...style, sources, layers, projection: { type: "globe" } };
   }
+
+  /* ---------- chapter look: imagery, relief, label colours (paint changes only) ---------- */
+  // Imagery is only switched on where a chapter asks for it: an opacity-0 raster layer would still
+  // download tiles at every stop. Fading out first, then removing the layer from the render.
+  function setImagery(m, on) {
+    clearTimeout(m.__imageryTimer);
+    if (on) {
+      m.setLayoutProperty("sat", "visibility", "visible");
+      m.setPaintProperty("sat", "raster-opacity", 1);
+      return;
+    }
+    m.setPaintProperty("sat", "raster-opacity", 0);
+    m.__imageryTimer = setTimeout(() => m.getLayer("sat") && m.setLayoutProperty("sat", "visibility", "none"), REDUCED ? 0 : 1000);
+  }
+
+  // Place names over imagery: plain white, no outline, small ones hidden. Original paints are remembered.
+  const LABEL_PAINT = ["text-color", "text-halo-width", "text-halo-blur", "text-opacity", "icon-opacity"];
+  let savedPaint = null;
+  function setLabelStyle(m, onImagery) {
+    if (!savedPaint) {
+      savedPaint = {};
+      m.getStyle().layers.forEach((l) => {
+        if (l.type === "symbol") savedPaint[l.id] = LABEL_PAINT.map((k) => m.getPaintProperty(l.id, k));
+      });
+    }
+    Object.entries(savedPaint).forEach(([id, original]) => {
+      const fine = FINE_LABELS.includes(id);
+      const values = onImagery ? ["#ffffff", 0, 0, fine ? 0 : original[3], fine ? 0 : original[4]] : original;
+      LABEL_PAINT.forEach((k, i) => m.setPaintProperty(id, k, values[i]));
+    });
+  }
+
+  // Relief only works on a flat projection, so it is switched on after / off before the projection.
+  // Going to a relief chapter, the relief itself only rises for the last part of the flight (under the base map):
+  // computing it for every view of a long flight is what made those flights stutter.
+  const TERRAIN_AT = 0.6;            // share of the flight flown flat
+  function applyChapter(m, c, flightMs) {
+    clearTimeout(m.__terrainTimer);
+    const projection = () => {
+      const want = c.terrain ? "mercator" : "globe";
+      if (m.__projection !== want) { m.setProjection({ type: want }); m.__projection = want; }
+    };
+    const terrain = (on) => {
+      const value = on ? c.terrain : 0;
+      if ((m.__terrain || 0) === value) return;
+      m.__terrain = value;
+      m.setLayoutProperty("hillshade", "visibility", value ? "visible" : "none");
+      m.setTerrain(value ? { source: "dem", exaggeration: value } : null);
+    };
+    if (c.terrain) {
+      projection();
+      if (flightMs > 0) { terrain(false); m.__terrainTimer = setTimeout(() => terrain(true), flightMs * TERRAIN_AT); }
+      else terrain(true);
+    } else { terrain(false); projection(); }
+    setLabelStyle(m, c.satellite);
+    setImagery(m, c.satellite);
+  }
+
+  /* ---------- country spotlight: the border draws itself, the rest of the world dims ---------- */
+  const WORLD_RECT = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
+  const spot = { raf: 0, country: "" };
 
   // Precise borders live in assets/geo/borders/<ISO2>.json (OpenStreetMap, the same data as the
   // basemap). Without such a file the simplified world outline is used.
@@ -325,7 +308,6 @@
 
   let spotToken = 0;
   async function spotlight(c) {
-    if (!map.getSource("spot-dim")) return;
     const token = ++spotToken;
     cancelAnimationFrame(spot.raf);
     const fade = () => {
@@ -372,77 +354,28 @@
     spot.raf = requestAnimationFrame(tick);
   }
 
-  /* ---------- locator inset: a small map of where the chapter is ---------- */
+  /* ---------- locator: a small 2D map of where the chapter is (desktop) ---------- */
   const insetEl = document.getElementById("inset");
-  let inset = null;
-  const insetPins = [];
+  let locator = null;
   const insetZoom = (c) => Math.min(4, Math.max(1.3, c.zoom * 0.35));
 
-  function buildInset() {
-    if (!insetEl || isMobile()) return;
-    inset = new maplibregl.Map({
-      container: insetEl, style: STYLE_URL, center: chapters[0].center, zoom: 1.5,
-      interactive: false, attributionControl: false,
-    });
-    inset.on("error", () => {});
-    inset.on("load", () => {
-      // A clean locator: only country names stay.
-      inset.getStyle().layers.forEach((l) => {
-        if (l.type !== "symbol") return;
-        if (COUNTRY_LAYERS.includes(l.id)) inset.setLayoutProperty(l.id, "text-field", NAME_EN);
-        else inset.setLayoutProperty(l.id, "visibility", "none");
-      });
-      if (current >= 0) updateInset(chapters[current], true);
-    });
-  }
-
   function updateInset(c, instant = false) {
-    if (!insetEl || !inset) return;
+    if (!insetEl || !locator) return;
     insetEl.classList.toggle("is-visible", c.index > 0);
-    insetPins.splice(0).forEach((m) => m.remove());
-    const spots = c.points.length ? c.points.map((p) => [p.lng, p.lat]) : [c.center];
-    spots.forEach((lngLat) => {
-      const el = document.createElement("div");
-      el.className = "inset-pin";
-      insetPins.push(new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(inset));
-    });
     const [lng, lat, z] = c.inset || [c.center[0], c.center[1], insetZoom(c)];
-    inset.flyTo({ center: [lng, lat], zoom: z, duration: REDUCED || instant ? 0 : 1600, essential: true });
+    const pins = c.points.length ? c.points.map((p) => [p.lng, p.lat]) : [c.center];
+    locator.moveTo(lng, lat, z, pins, instant);
   }
 
-  /* ---------- main map ---------- */
-  const start = chapters[initialIndex()];
-  const map = new maplibregl.Map({
-    container: "map",
-    style: STYLE_URL,
-    center: start.center,
-    zoom: start.zoom,
-    interactive: false,           // page scroll must never be hijacked by the map
-    attributionControl: isMobile() ? false : { compact: true },
-    maxTileCacheSize: 300,        // revisited chapters keep their tiles
-    fadeDuration: 0,              // names and symbols appear with their tiles, no fade-in delay
-    ...(isMobile() ? { pixelRatio: Math.min(window.devicePixelRatio || 1, 2) } : {}),
-  });
-
-  // Phones: the sources live at the very top (under the header, away from the cards), folded to the "i".
-  if (isMobile()) {
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
-    const fold = () => {
-      const el = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
-      if (el) { el.classList.remove("maplibregl-compact-show"); el.removeAttribute("open"); }
-    };
-    map.on("load", fold);
-    map.on("idle", fold);
-  }
-
-  // Debug handle for measuring (open the page with ?debug).
-  if (new URLSearchParams(location.search).has("debug")) window.__storymap = { map, preload: () => preload };
-
+  /* ---------- state ---------- */
+  let map = null;
+  let world = null;
   let current = -1;
   let scrubbing = false; // dragging along the chapter rail: shorter camera moves
   let ready = false; // scroll tracking waits for the map, markers and layers
-  const markers = []; // { chapterIndex, pin }
+  const markers = []; // { chapterIndex, pin, marker, on }
 
+  // Pins are only attached to the map from their chapter on: each attached marker is repositioned every frame.
   function buildMarkers() {
     chapters.forEach((c) => {
       const spots = c.points.length
@@ -457,34 +390,18 @@
           l.textContent = s.label;
           pin.appendChild(l);
         }
-        new maplibregl.Marker({ element: pin }).setLngLat(s.lngLat).addTo(map);
-        markers.push({ chapterIndex: c.index, pin });
+        markers.push({ chapterIndex: c.index, pin, marker: new maplibregl.Marker({ element: pin }).setLngLat(s.lngLat), on: false });
       });
     });
   }
 
-  const LAYER_DEFAULTS = {
-    fill: { "fill-color": "#c4301c", "fill-opacity": 0.35 },
-    line: { "line-color": "#12161c", "line-width": 1.5 },
-    circle: { "circle-color": "#c4301c", "circle-radius": 5 },
-  };
-  function buildLayers() {
-    chapters.forEach((c) => c.layers.forEach((l) => {
-      map.addSource(l.id, { type: "geojson", data: l.url });
-      map.addLayer({
-        id: l.id, type: l.type || "fill", source: l.id,
-        layout: { visibility: "none" },
-        paint: { ...LAYER_DEFAULTS[l.type || "fill"], ...(l.paint || {}) },
-      });
-    }));
-  }
-
   const showLayers = (index) => chapters.forEach((c) => c.layers.forEach((l) => {
-    if (map.getLayer(l.id)) map.setLayoutProperty(l.id, "visibility", c.index === index ? "visible" : "none");
+    const want = c.index === index ? "visible" : "none";
+    if (map.getLayer(l.id) && map.getLayoutProperty(l.id, "visibility") !== want) map.setLayoutProperty(l.id, "visibility", want);
   }));
 
   function activate(index, instant = false) {
-    if (index === current) return;
+    if (!ready || index === current) return;
     current = index;
     const c = chapters[index];
     steps.forEach((s, i) => s.classList.toggle("is-active", i === index));
@@ -493,13 +410,16 @@
       b.setAttribute("aria-current", i === index ? "true" : "false");
     });
     markers.forEach((m) => {
-      m.pin.style.display = m.chapterIndex <= index ? "" : "none";
+      const on = m.chapterIndex <= index;
+      if (on !== m.on) { if (on) m.marker.addTo(map); else m.marker.remove(); m.on = on; }
       m.pin.classList.toggle("is-current", m.chapterIndex === index);
     });
-    applyChapter(map, c);
+    const flightMs = REDUCED || instant ? 0 : scrubbing ? SCRUB_MS : FLIGHT_MS;
+    applyChapter(map, c, flightMs);
     showLayers(index);
     spotlight(c);
-    moveCamera(map, c, REDUCED || instant ? 0 : scrubbing ? 700 : 2600);
+    warmUp([c]);
+    moveCamera(map, c, flightMs);
     updateInset(c, instant);
     try { history.replaceState(null, "", index === 0 ? location.pathname : "#" + c.id); } catch (_) { /* ignore */ }
     preloadAround(index);
@@ -569,8 +489,9 @@
 
   const preload = { done: new Set(), inflight: new Set(), queue: [] };
 
+  // Background downloads give way to the map's own requests while the camera moves.
   function pumpPreload() {
-    while (preload.inflight.size < PRELOAD_PARALLEL && preload.queue.length) {
+    while (preload.inflight.size < PRELOAD_PARALLEL && preload.queue.length && !(map && map.isMoving())) {
       const url = preload.queue.shift();
       preload.inflight.add(url);
       fetch(url, { mode: "cors", credentials: "omit", priority: "low" })
@@ -581,25 +502,106 @@
     }
   }
 
-  const tileXY = (lng, lat, z) => [Math.floor(mercX(lng, z) / 512), Math.floor(mercY(lat, z) / 512)];
+  /* ---------- arrival warm-up ---------- */
+  // MapLibre only reads the vector tiles of the view it is showing, so a long flight used to land on tiles that were
+  // still being read. Now the vector map stops loading during flights (the base map covers it anyway), the arrival
+  // view's tiles are read in the background at take-off, and they are handed to MapLibre the moment it asks for them.
+  // This relies on MapLibre internals (version pinned in index.html): on any surprise it simply does nothing.
+  const warm = { tiles: new Map(), tm: null, hits: 0, misses: 0 };
 
-  // Vector tiles of a chapter's arrival view (and the level above), so they come from cache when the camera lands.
-  function vectorTilesFor(c) {
-    const id = Object.keys(map.getStyle().sources).find((k) => map.getStyle().sources[k].type === "vector");
-    const src = id && map.getSource(id);
-    if (!src || !src.tiles || !src.tiles[0]) return [];
-    const box = map.getContainer();
-    const rx = Math.ceil(box.clientWidth / 1024) + 1, ry = Math.ceil(box.clientHeight / 1024) + 1;
-    const out = [];
-    const top = Math.min(src.maxzoom || 14, Math.floor(zoomFor(c)));
-    [[top, rx, ry], [top - 1, 1, 1]].forEach(([z, dx, dy]) => {
-      if (z < 0) return;
-      const n = 2 ** z, [cx, cy] = tileXY(c.focus[0], c.focus[1], z);
-      for (let x = cx - dx; x <= cx + dx; x++) for (let y = Math.max(0, cy - dy); y <= Math.min(n - 1, cy + dy); y++) {
-        out.push(src.tiles[0].replace("{z}", z).replace("{x}", ((x % n) + n) % n).replace("{y}", y));
+  const dropTile = (tm, t) => {
+    try { t.aborted = true; tm._abortTile(t); tm._unloadTile(t); } catch (_) { /* already gone */ }
+  };
+
+  function vectorManager() {
+    if (warm.tm) return warm.tm;
+    const tm = map.style && map.style.tileManagers && map.style.tileManagers.openmaptiles;
+    if (!tm || typeof tm._addTile !== "function" || !tm._outOfViewCache || !tm._inViewTiles || typeof tm.pause !== "function") return null;
+    const addTile = tm._addTile.bind(tm);
+    tm._addTile = (id) => {
+      const t = warm.tiles.get(id.key);
+      if (!t && !tm._inViewTiles.getTileById(id.key) && !tm._outOfViewCache.has(id)) {
+        warm.misses++;
+        if (params.has("debug")) warm.missed = [...(warm.missed || []).slice(-40), `${id.canonical.z}/${id.canonical.x}/${id.canonical.y}`];
       }
-    });
+      if (t && !tm._inViewTiles.getTileById(id.key)) {
+        warm.hits++;
+        warm.tiles.delete(id.key);
+        if (t.state === "loaded") tm._outOfViewCache.add(id, t);   // picked up below as a cached tile
+        else if (t.state === "loading") { t.uses++; tm._inViewTiles.setTile(id.key, t); return t; }
+        else dropTile(tm, t);
+      }
+      return addTile(id);
+    };
+    return (warm.tm = tm);
+  }
+
+  // Vector tiles (512 px) covering a chapter's arrival view, from its zoom, padding, tilt and rotation.
+  // A tilted camera sees a trapezoid of ground: its near edge (towards the camera) and far edge are found by casting
+  // the top and bottom screen rays (MapLibre's camera: field of view 36.87°, distance 1.5 x the window height).
+  // Finer tiles are used near the camera, coarser ones towards the horizon.
+  function arrivalTiles(c, maxzoom) {
+    const box = map.getContainer(), W = box.clientWidth, H = box.clientHeight;
+    const zoom = zoomFor(c), z = Math.max(0, Math.min(maxzoom, Math.floor(zoom)));
+    const pad = padding(c);
+    const cx = mercX(c.focus[0], zoom) - (pad.left - pad.right) / 2;
+    const cy = mercY(c.focus[1], zoom) - (pad.top - pad.bottom) / 2;
+    const pitch = (Math.min(c.pitch, map.getMaxPitch()) * Math.PI) / 180;
+    const D = 1.5 * H, halfFov = Math.atan(1 / 3), h = D * Math.cos(pitch), back = D * Math.sin(pitch);
+    const ground = (a) => {                  // a: angle of a screen ray from the centre ray, towards the top
+      const ang = Math.min(pitch + a, (84 * Math.PI) / 180);
+      return { s: h * Math.tan(ang) - back, w: ((W / 2) * (h / Math.cos(ang))) / D };
+    };
+    const near = ground(-halfFov), far = ground(halfFov);
+    if (c.terrain) { near.s *= 1.8; far.s *= 1.6; }   // centred on a summit: the ground around lies lower, so further
+    const b = (c.bearing * Math.PI) / 180;
+    const fwd = [Math.sin(b), -Math.cos(b)], side = [Math.cos(b), Math.sin(b)];   // mercator px: x east, y south
+    const at = (s) => near.w + ((far.w - near.w) * (s - near.s)) / (far.s - near.s || 1);
+    const band = (s0, s1) => {               // bounding box of the ground between two distances from the centre
+      const pts = [s0, s1].flatMap((s) => [-1, 1].map((k) => [cx + fwd[0] * s + side[0] * k * at(s), cy + fwd[1] * s + side[1] * k * at(s)]));
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      return [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    };
+    const out = [];
+    const cover = (zz, [x0, x1, y0, y1], margin) => {
+      if (zz < 0 || zz > maxzoom) return;
+      const ts = 512 * 2 ** (zoom - zz), n = 2 ** zz;
+      for (let x = Math.floor(x0 / ts) - margin; x <= Math.floor(x1 / ts) + margin; x++) {
+        for (let y = Math.max(0, Math.floor(y0 / ts) - margin); y <= Math.min(n - 1, Math.floor(y1 / ts) + margin); y++) {
+          out.push([zz, ((x % n) + n) % n, y]);
+        }
+      }
+    };
+    if (c.pitch <= 0) { cover(z, band(near.s, far.s), 1); return out; }
+    const mid = far.s * 0.35;
+    if (c.pitch > 45) cover(z + 1, band(near.s, 0), 0);
+    cover(z, band(near.s, c.pitch > 45 ? mid : far.s), c.pitch > 45 ? 0 : 1);
+    cover(z - 1, band(0, far.s), 0);
+    if (c.pitch > 45) cover(z - 2, band(mid, far.s), 0);
     return out;
+  }
+
+  // Read the arrival tiles of these chapters in the background; tiles warmed for other chapters are released.
+  function warmUp(list) {
+    const tm = vectorManager();
+    if (!tm) return;
+    try {
+      const sample = tm._inViewTiles.getAllTiles()[0];
+      if (!sample) return;
+      const Tile = sample.constructor, TileID = sample.tileID.constructor, src = tm._source;
+      const wanted = new Set();
+      list.forEach((c) => arrivalTiles(c, src.maxzoom).forEach(([z, x, y]) => {
+        const id = new TileID(z, 0, z, x, y);
+        wanted.add(id.key);
+        if (warm.tiles.has(id.key) || tm._inViewTiles.getTileById(id.key) || tm._outOfViewCache.has(id)) return;
+        const t = new Tile(id, src.tileSize * id.overscaleFactor());
+        warm.tiles.set(id.key, t);
+        src.loadTile(t)
+          .then((res) => { if (!t.aborted) tm._tileLoaded(t, id.key, "loading", res); })
+          .catch(() => { t.state = "errored"; if (warm.tiles.get(id.key) === t) warm.tiles.delete(id.key); });
+      }));
+      warm.tiles.forEach((t, key) => { if (!wanted.has(key)) { warm.tiles.delete(key); dropTile(tm, t); } });
+    } catch (_) { /* MapLibre internals changed: no warm-up */ }
   }
 
   // Relief (and its satellite imagery) of every terrain chapter, from the world down to the arrival view.
@@ -611,7 +613,7 @@
       const [cx, cy] = [Math.floor(mercX(c.focus[0], z - 1) / 256), Math.floor(mercY(c.focus[1], z - 1) / 256)];
       for (let x = cx - r; x <= cx + r; x++) for (let y = Math.max(0, cy - r); y <= Math.min(n - 1, cy + r); y++) {
         const xx = ((x % n) + n) % n;
-        out.push(DEM_TILES.replace("{z}", z).replace("{x}", xx).replace("{y}", y));
+        if (z <= DEM_MAX_ZOOM) out.push(DEM_TILES.replace("{z}", z).replace("{x}", xx).replace("{y}", y));
         if (c.satellite) out.push(SAT_TILES.replace("{z}", z).replace("{x}", xx).replace("{y}", y));
       }
     }
@@ -621,10 +623,9 @@
   // Nearest flights first: the one just taken and the next one, then outwards. Re-ordered at every chapter change.
   function preloadAround(index) {
     if (NOBASE || (navigator.connection && navigator.connection.saveData)) return;
-    const first = [];     // arrival views of the neighbours, then the relief of terrain chapters, go before the base map
-    [index + 1, index - 1].forEach((k) => { if (chapters[k]) first.push(...vectorTilesFor(chapters[k])); });
+    const first = [];     // the relief of terrain chapters goes before the base map
     chapters.forEach((c) => { if (c.terrain) first.push(...terrainTilesFor(c)); });
-    const lead = first.filter((u, i) => first.indexOf(u) === i && !preload.done.has(u) && !preload.inflight.has(u));
+    const lead = [...new Set(first)].filter((u) => !preload.done.has(u) && !preload.inflight.has(u));
     const budget = isMobile() ? PRELOAD_TILES.mobile : PRELOAD_TILES.desktop;
     const flights = chapters.length - 1;
     const order = [];
@@ -647,6 +648,7 @@
   }
 
   // Bring a chapter into view: scroll the page (desktop) or the card strip (mobile).
+  // "instant" is explicit: the page has scroll-behavior: smooth, which would turn "auto" into an animation.
   const reveal = (i, behavior) => (isMobile() ? steps[i] : steps[i].querySelector(".card") || steps[i]).scrollIntoView(
     isMobile() ? { behavior, inline: "center", block: "nearest" } : { behavior, block: "center" });
 
@@ -666,7 +668,7 @@
 
   /* Press on the rail and drag up or down to flip through chapters, like a scroller. */
   function goTo(i, instant) {
-    reveal(i, instant || REDUCED ? "auto" : "smooth");
+    reveal(i, instant || REDUCED ? "instant" : "smooth");
   }
   const railIndexAt = (y) => {
     let best = 0, dist = Infinity;
@@ -723,43 +725,13 @@
       settle = setTimeout(() => activate(nearest()), 90);
     }, { passive: true });
   } else {
+    // Cards rest centred in the window through CSS scroll snapping (see css); the chapter changes when its card
+    // crosses the middle band.
     const io = new IntersectionObserver((entries) => {
       if (!ready) return;
       entries.forEach((e) => { if (e.isIntersecting) activate(Number(e.target.dataset.index)); });
     }, { rootMargin: "-45% 0px -45% 0px" });
     steps.forEach((el) => io.observe(el));
-
-    // Resting place: when scrolling stops with a card close to the vertical middle of the window, ease it into place.
-    const SETTLE_RANGE = 180, SETTLE_IDLE = 120;
-    const cards = steps.map((s) => s.querySelector(".card")).filter(Boolean);
-    const middleOffset = (el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2 - innerHeight / 2; };
-    let settleTimer = 0, settleFrame = 0, settleY = null;
-    // Own easing (the browser's smooth scroll is short and abrupt): gentle start, long soft landing, 450 to 800 ms.
-    const settleTo = (dy) => {
-      const y0 = scrollY, t0 = performance.now(), dur = Math.min(800, 450 + Math.abs(dy) * 2);
-      const ease = (t) => -(Math.cos(Math.PI * t) - 1) / 2;                 // easeInOutSine
-      const step = (now) => {
-        const t = Math.min(1, (now - t0) / dur);
-        settleY = y0 + dy * ease(t);
-        scrollTo(0, settleY);
-        settleFrame = t < 1 ? requestAnimationFrame(step) : 0;
-        if (t >= 1) settleY = null;
-      };
-      settleFrame = requestAnimationFrame(step);
-    };
-    const stopSettle = () => { cancelAnimationFrame(settleFrame); settleFrame = 0; settleY = null; };
-    ["wheel", "touchstart", "pointerdown", "keydown"].forEach((ev) => addEventListener(ev, stopSettle, { passive: true }));
-    addEventListener("scroll", () => {
-      if (REDUCED || settleY !== null) return;          // our own animation is moving the page
-      clearTimeout(settleTimer);
-      settleTimer = setTimeout(() => {
-        if (!ready || rail.classList.contains("is-scrubbing")) return;
-        const best = cards.reduce((a, b) => (Math.abs(middleOffset(b)) < Math.abs(middleOffset(a)) ? b : a));
-        const off = middleOffset(best);
-        if (best.offsetHeight > innerHeight * 0.88 || Math.abs(off) < 2 || Math.abs(off) > SETTLE_RANGE) return;
-        settleTo(off);
-      }, SETTLE_IDLE);
-    }, { passive: true });
 
     // Up / Down arrows step from chapter to chapter (instead of nudging the page a few pixels).
     addEventListener("keydown", (e) => {
@@ -768,7 +740,7 @@
       if (/^(INPUT|TEXTAREA|SELECT|IFRAME)$/.test((e.target && e.target.tagName) || "")) return;
       const i = Math.min(chapters.length - 1, Math.max(0, current + (e.key === "ArrowDown" ? 1 : -1)));
       e.preventDefault();
-      if (i !== current) reveal(i, REDUCED ? "auto" : "smooth");
+      if (i !== current) reveal(i, REDUCED ? "instant" : "smooth");
     });
   }
 
@@ -831,56 +803,124 @@
     };
     ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "scroll"].forEach((ev) =>
       addEventListener(ev, armHint, { passive: true }));
-    hint.addEventListener("click", () => reveal(1, REDUCED ? "auto" : "smooth"));
+    hint.addEventListener("click", () => reveal(1, REDUCED ? "instant" : "smooth"));
     armHint();
   }
 
-  /* ---------- base map visibility ---------- */
-  // Opaque while the camera moves (and until the vector map is fully drawn); then it fades out, revealing the
-  // vector map and its names. A timer guarantees it never stays on if the map never reports idle.
-  // It leaves as soon as every tile of the view is loaded (not at "idle", which waits much longer).
-  const BASE_REVEAL_MS = 220;
-  let baseTimer = 0;
-  const setBase = (opacity, ms) => {
-    if (!map.getLayer("base")) return;
-    map.setPaintProperty("base", "raster-opacity-transition", { duration: ms, delay: 0 });
-    map.setPaintProperty("base", "raster-opacity", opacity);
-  };
-  const revealWhenLoaded = () => {
-    if (map.isMoving() || !map.areTilesLoaded()) return;
-    map.off("render", revealWhenLoaded);
-    clearTimeout(baseTimer);
-    requestAnimationFrame(() => requestAnimationFrame(() => {   // let the names settle for two frames first
-      if (!map.isMoving()) setBase(0, BASE_REVEAL_MS);
-    }));
-  };
-  map.on("movestart", () => { clearTimeout(baseTimer); map.off("render", revealWhenLoaded); setBase(1, 0); });
-  map.on("moveend", () => {
-    clearTimeout(baseTimer);
-    map.on("render", revealWhenLoaded);
-    baseTimer = setTimeout(() => { if (!map.isMoving()) setBase(0, 700); }, 6000);
-    revealWhenLoaded();
-    map.triggerRepaint();
-  });
-  map.on("idle", () => { if (!map.isMoving()) { clearTimeout(baseTimer); setBase(0, BASE_REVEAL_MS); } });
+  /* ---------- while the camera moves: base map on, sky still, downloads paused ---------- */
+  function watchMotion() {
+    // Opaque while the camera moves; it leaves as soon as every tile of the view is loaded (not at "idle",
+    // which waits much longer). A timer guarantees it never stays on.
+    // Only real changes reach the style: any paint change repaints the map, and repainting on "idle" would
+    // start an endless render loop.
+    let baseTimer = 0, baseOpacity = 1;
+    const setBase = (opacity, ms) => {
+      if (opacity === baseOpacity || !map.getLayer("base")) return;
+      baseOpacity = opacity;
+      map.setPaintProperty("base", "raster-opacity-transition", { duration: ms, delay: 0 });
+      map.setPaintProperty("base", "raster-opacity", opacity);
+    };
+    // Once the reader has landed, the arrival views of the chapters before and after are read in the background.
+    const warmNeighbours = () => warmUp([chapters[current - 1], chapters[current + 1]].filter(Boolean));
+    const revealWhenLoaded = () => {
+      if (map.isMoving() || !map.areTilesLoaded()) return;
+      map.off("render", revealWhenLoaded);
+      clearTimeout(baseTimer);
+      requestAnimationFrame(() => requestAnimationFrame(() => {   // let the names settle for two frames first
+        if (map.isMoving()) return;
+        setBase(0, BASE_REVEAL_MS);
+        warmNeighbours();
+      }));
+    };
+    // The vector map rests while the camera flies under the base map; it resumes on landing.
+    const vectorRest = (on) => {
+      const tm = vectorManager();
+      if (!tm) return;
+      try { if (on) tm.pause(); else tm.resume(); } catch (_) { /* keep loading normally */ }
+    };
+    // The sky can only be seen around the globe: once the globe is wider than the window it can rest.
+    const skyVisible = () => {
+      if (map.__projection !== "globe") return false;
+      const radius = (512 * 2 ** map.getZoom()) / (2 * Math.PI);
+      const box = map.getContainer();
+      return radius < Math.hypot(box.clientWidth, box.clientHeight) * 0.75;
+    };
+    const sky = (on) => window.starfield && window.starfield.run(on);
+
+    map.on("movestart", () => {
+      clearTimeout(baseTimer);
+      map.off("render", revealWhenLoaded);
+      setBase(1, 0);
+      if (!NOBASE) vectorRest(true);
+      sky(false);
+    });
+    // A projection change (to and from the relief chapter) reloads the vector map and wakes it up: rest again.
+    map.on("move", () => { if (!NOBASE && warm.tm && !warm.tm._paused && map.isMoving()) vectorRest(true); });
+    map.on("moveend", () => {
+      clearTimeout(baseTimer);
+      vectorRest(false);
+      map.on("render", revealWhenLoaded);
+      baseTimer = setTimeout(() => { if (!map.isMoving()) setBase(0, 700); }, 6000);
+      revealWhenLoaded();
+      map.triggerRepaint();
+      sky(skyVisible());
+      pumpPreload();
+    });
+    map.on("idle", () => { if (!map.isMoving()) { clearTimeout(baseTimer); setBase(0, BASE_REVEAL_MS); } });
+  }
 
   /* ---------- boot ---------- */
-  map.on("error", (e) => console.warn("Map:", (e && e.error && e.error.message) || e));
-  map.on("style.load", () => {
-    if (map.setProjection) { map.setProjection({ type: "globe" }); map.__projection = "globe"; }
-  });
-  map.on("load", async () => {
-    addExtras(map);
-    addSpot(map);
-    buildMarkers();
-    buildLayers();
-    const i = initialIndex();
-    if (i > 0) reveal(i, "instant");
-    buildInset();
-    ready = true;
-    activate(i, true);
-    if (i > 0) keepDeepLinkInView(i);
-    await setupPlaceNames(map);
-  });
-  addEventListener("resize", () => moveCamera(map, chapters[Math.max(current, 0)], 0));
+  // The style and the world outline are fetched together, the style is prepared, then the map is created once.
+  async function boot() {
+    const [style, w] = await Promise.all([
+      fetch(STYLE_URL).then((r) => r.json()),
+      fetch(WORLD_URL).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
+    world = w;
+    // Tiles are read in background workers; MapLibre starts only one. Two to four read arrivals in parallel.
+    try {
+      if (maplibregl.setWorkerCount) maplibregl.setWorkerCount(Math.min(4, Math.max(2, Math.floor((navigator.hardwareConcurrency || 4) / 2))));
+    } catch (_) { /* already started */ }
+    const start = chapters[initialIndex()];
+    map = new maplibregl.Map({
+      container: "map",
+      style: buildStyle(style, world),
+      center: start.center,
+      zoom: zoomFor(start),
+      interactive: false,           // page scroll must never be hijacked by the map
+      attributionControl: isMobile() ? false : { compact: true },
+      maxTileCacheSize: 300,        // revisited chapters keep their tiles
+      fadeDuration: 0,              // names and symbols appear with their tiles, no fade-in delay
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+    });
+    map.__projection = "globe";
+    map.on("error", (e) => console.warn("Map:", (e && e.error && e.error.message) || e));
+    if (params.has("debug")) window.__storymap = { map, preload: () => preload, warm: () => warm };
+
+    // Phones: the sources live at the very top (under the header, away from the cards), folded to the "i".
+    if (isMobile()) {
+      map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
+      const fold = () => {
+        const el = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
+        if (el) { el.classList.remove("maplibregl-compact-show"); el.removeAttribute("open"); }
+      };
+      map.on("load", fold);
+      map.on("idle", fold);
+    }
+
+    if (insetEl && !isMobile() && world && window.createLocator) locator = window.createLocator(insetEl, world);
+    watchMotion();
+
+    map.on("load", () => {
+      buildMarkers();
+      const i = initialIndex();
+      if (i > 0) reveal(i, "instant");
+      ready = true;
+      activate(i, true);
+      if (i > 0) keepDeepLinkInView(i);
+    });
+    addEventListener("resize", () => { if (ready) moveCamera(map, chapters[Math.max(current, 0)], 0); });
+  }
+
+  boot().catch((err) => console.warn("Map unavailable:", err));
 })();

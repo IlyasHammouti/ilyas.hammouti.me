@@ -82,6 +82,12 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 
 /* Story */
 #story { position: relative; z-index: 10; pointer-events: none; }
+/* Desktop: each card has a resting place, centred in the window. When scrolling stops near it, the browser
+   eases the card there itself (scroll snapping runs off the main thread, so it stays smooth during flights). */
+@media (min-width: 900px) {
+  html.story-page { scroll-snap-type: y proximity; }
+  html.story-page .card { scroll-snap-align: center; }
+}
 .step {
   min-height: 100vh;
   display: flex; align-items: center;
@@ -204,8 +210,7 @@ h2 { font-size: clamp(1.4rem, 2.4vw, 1.75rem); }
   padding: 4px 8px; background: var(--ink); color: #fff;
   font: 500 0.625rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase;
 }
-.inset .maplibregl-canvas { outline: none; }
-.inset-pin { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--ink); }
+.inset canvas { display: block; }
 
 /* Chapter rail: every chapter labelled "year · place"; the current one opaque, the others translucent */
 .rail {
